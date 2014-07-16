@@ -1008,24 +1008,25 @@ static int es8323_probe(struct snd_soc_codec *codec)
     //gpio_set_value(SPK_CON, 1);
     gpio_direction_output(es8323_spk_con_gpio,0);
 
-
-		ret = gpio_request(es8323_hp_det_gpio, NULL);
-		if (ret != 0) {
-				printk("%s request HP_DET error", __func__);
-				return ret;
-		}
-		gpio_direction_input(es8323_hp_det_gpio);
+    if(es8323_hp_det_gpio  != INVALID_GPIO) {
+		    ret = gpio_request(es8323_hp_det_gpio, NULL);
+		    if (ret != 0) {
+				    printk("%s request HP_DET error", __func__);
+				    return ret;
+		    }
+		    gpio_direction_input(es8323_hp_det_gpio);
 		
-		flags = gpio_get_value(es8323_hp_det_gpio) ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
+		    flags = gpio_get_value(es8323_hp_det_gpio) ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
 		
-		HP_IRQ = gpio_to_irq(es8323_hp_det_gpio);
-    if (HP_IRQ){
-        ret = request_irq(HP_IRQ, hp_det_irq_handler, flags, "ES8323", NULL);
-        if(ret == 0){
-            printk("%s:register ISR (irq=%d)\n", __FUNCTION__,HP_IRQ);
+		    HP_IRQ = gpio_to_irq(es8323_hp_det_gpio);
+        if (HP_IRQ){
+            ret = request_irq(HP_IRQ, hp_det_irq_handler, flags, "ES8323", NULL);
+            if(ret == 0){
+                printk("%s:register ISR (irq=%d)\n", __FUNCTION__,HP_IRQ);
+            }
+            else 
+			    printk("request_irq HP_IRQ failed\n");
         }
-        else 
-			printk("request_irq HP_IRQ failed\n");
     }
     
 	if (codec == NULL) {

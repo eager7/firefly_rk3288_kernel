@@ -121,6 +121,21 @@
 		};
 	};
 
+	rockchip-es8323 {
+		compatible = "rockchip-es8323";
+		dais {
+			dai0 {
+				audio-codec = <&es8323>;
+				i2s-controller = <&i2s>;
+				format = "i2s";
+				//continuous-clock;
+				//bitclock-inversion;
+				//frame-inversion;
+				//bitclock-master;
+				//frame-master;
+			};
+		};
+	};
 	rkxx-remotectl{
 		compatible = "rockchip,remotectl";
 		module-gpios = <&gpio0 GPIO_A6 GPIO_ACTIVE_LOW>;
@@ -407,6 +422,11 @@
 
 &i2c2 {
 	status = "okay";
+	es8323: es8323@10 {
+	    compatible = "es8323";
+		reg = <0x10>;
+		spk-con-gpio = <&gpio0 GPIO_B2 GPIO_ACTIVE_HIGH>;
+	};
 };
 
 &i2c3 {
