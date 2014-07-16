@@ -127,6 +127,15 @@
 		status = "disabled";
 	};
 
+	firefly-vga {
+		compatible = "firefly,vga";
+		gpio-pwn = <&gpio0 GPIO_C1 GPIO_ACTIVE_HIGH>;
+		gpio-sel = <&gpio0 GPIO_C2 GPIO_ACTIVE_HIGH>;
+		rockchip,source = <0>; //0: LCDC0; 1: LCDC1
+		rockchip,prop = <PRMRY>;//<EXTEND>
+		status = "okay";
+	};
+
 	usb_control {
 		compatible = "rockchip,rk3288-usb-control";
 

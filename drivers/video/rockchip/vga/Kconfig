@@ -1,0 +1,6 @@
+config  FIREFLY_VGA
+        bool "Firefly VGA Out/In support"
+        help
+           Support Firefly VGA in if you say y here
+
+
