@@ -202,6 +202,26 @@ static struct rkxx_remote_key_table remote_key_table_sunchip_ff[] = {
     
     {0xE8, KEY_SEARCH},     // search
 };
+#define R66_REMOTE
+#ifdef R66_REMOTE
+static struct rkxx_remote_key_table remote_key_table_r66[12] = {
+        {0x28, KEY_POWER},        // Power
+        // Control
+    {0x3A, 176},              // Settings
+    {0xC8, KEY_MENU},         // Menu
+    {0xC0, KEY_UP},           // Up
+    {0x40, KEY_DOWN},         // Down
+    {0x70, KEY_LEFT},         // Left
+    {0x58, KEY_RIGHT},        // Right
+    {0xE0, KEY_REPLY},        // Ok
+    {0x12, KEY_HOME},         // Home
+    {0x80, KEY_BACK},         // Back
+    // vol
+    {0x1A, KEY_VOLUMEDOWN},   // Vol-
+    {0xD0, KEY_VOLUMEUP},     // Vol+
+};
+#endif
+
 
 suspend_state_t get_suspend_state(void)
 {
@@ -211,6 +231,14 @@ suspend_state_t get_suspend_state(void)
 
 static struct rkxx_remotectl_button remotectl_button[] = 
 {
+#ifdef R66_REMOTE
+    {
+       .usercode = 0xff,
+       .nbuttons =  12,
+       .key_table = &remote_key_table_r66[0],
+    },
+#endif
+#if 0
     {  
        .usercode = 0xff,
        .nbuttons =  22, 
@@ -221,6 +249,7 @@ static struct rkxx_remotectl_button remotectl_button[] =
        .nbuttons =  22, 
        .key_table = &remote_key_table_meiyu_202[0],
     },
+#endif
 };
 
 
