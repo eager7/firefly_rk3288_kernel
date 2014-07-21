@@ -61,6 +61,7 @@ struct act8846 {
 	int chip_irq;
 	int pmic_sleep_gpio; /* */
 	int pmic_hold_gpio; /* */
+	int pmic_cpu_det_gpio;
 	unsigned int dcdc_slp_voltage[3]; /* buckx_voltage in uV */
 	bool pmic_sleep;
 	struct regmap *regmap;
@@ -783,6 +784,11 @@ static struct act8846_board *act8846_parse_dt(struct act8846 *act8846)
 	pdata->pmic_hold_gpio = gpio;	
 	pdata->pm_off = of_property_read_bool(act8846_pmic_np,"act8846,system-power-controller");
 
+    gpio = of_get_named_gpio(act8846_pmic_np,"cpu_det_gpio", 0);
+        if (!gpio_is_valid(gpio))
+                printk("invalid gpio: %d\n",gpio);
+    pdata->pmic_cpu_det_gpio = gpio;
+
 	return pdata;
 }
 
@@ -799,6 +805,12 @@ void act8846_device_shutdown(void)
 	struct act8846 *act8846 = g_act8846;
 	
 	printk("%s\n",__func__);
+	
+	if (act8846->pmic_cpu_det_gpio) {
+			gpio_direction_output(act8846->pmic_cpu_det_gpio,0);
+			mdelay(100);
+	}
+	
 #if 1
 	if (act8846->pmic_hold_gpio) {
 			gpio_direction_output(act8846->pmic_hold_gpio,0);
@@ -951,6 +963,21 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
 			printk("%s: act8846_pmic_sleep=%x\n", __func__, ret);
 	}
 	#endif
+	
+    /****************************set cpu_det high **************************/
+    #ifdef CONFIG_OF
+    act8846->pmic_cpu_det_gpio = pdev->pmic_cpu_det_gpio;
+    if (act8846->pmic_cpu_det_gpio) {
+            ret = gpio_request(act8846->pmic_cpu_det_gpio, "act8846_pmic_cpu_det");
+            if (ret < 0) {
+                dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",       act8846->pmic_cpu_det_gpio, ret);
+                return IRQ_NONE;
+            }
+            gpio_direction_output(act8846->pmic_cpu_det_gpio, 1);
+            ret = gpio_get_value(act8846->pmic_cpu_det_gpio);
+            printk("%s: act8846_pmic_cpu_det_gpio=%x\n", __func__, ret);
+    }
+    #endif
 	
 	if (pdev) {
 		act8846->num_regulators = act8846_NUM_REGULATORS;
