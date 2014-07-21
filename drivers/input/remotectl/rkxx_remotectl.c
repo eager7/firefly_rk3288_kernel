@@ -30,13 +30,13 @@
 #include <linux/iio/machine.h>
 #include <linux/iio/driver.h>
 #include <linux/iio/consumer.h>
-
+#include <linux/fs.h>
 #include <asm/gpio.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_gpio.h>
 #include <linux/of_platform.h>
-
+#include <linux/uaccess.h>
 #include "remotectl.h"
 
 #if 0
@@ -83,7 +83,7 @@ struct rkxx_remotectl_drvdata {
     int gpio;
     int wakeup;
     int rep;
-
+    
     struct input_dev *input;
     struct timer_list timer;
     struct tasklet_struct remote_tasklet;
@@ -91,7 +91,30 @@ struct rkxx_remotectl_drvdata {
     struct rkxx_remotectl_suspend_data remotectl_suspend_data;
 };
 
+#define REMOTE_LED
+#ifdef REMOTE_LED
 
+struct timer_list timer_led;
+
+extern void firefly_leds_ctrl_ex(int led_num, int value);
+
+static int remotectl_led_ctrl(int state)
+{
+#ifdef CONFIG_LEDS_FIREFLY
+#define POWER_LED 0
+    if(state) {
+        firefly_leds_ctrl_ex(POWER_LED,1);
+    } else {
+        firefly_leds_ctrl_ex(POWER_LED,0);
+    }
+#endif
+}
+
+static void led_timer(unsigned long _data)
+{
+    remotectl_led_ctrl(1);
+}
+#endif
 
 //特殊功能键值定义
     //193      //photo
@@ -331,6 +354,11 @@ static void remotectl_do_something(unsigned long  data)
         {
             ddata->scanData <<= 1;
             ddata->count ++;
+            #ifdef REMOTE_LED
+            mod_timer(&timer_led,jiffies + msecs_to_jiffies(50));
+            remotectl_led_ctrl(0);    
+            #endif
+            
             if ((TIME_BIT1_MIN < ddata->period) && (ddata->period < TIME_BIT1_MAX)){
                 ddata->scanData |= 0x01;
             }
@@ -646,7 +674,9 @@ static int remotectl_probe(struct platform_device *pdev)
 		pr_err("gpio-keys: Unable to register input device, error: %d\n", error);
 		goto fail2;
 	}
-    
+#ifdef REMOTE_LED
+	setup_timer(&timer_led, led_timer, (unsigned long)ddata);
+#endif   
 	input_set_capability(input, EV_KEY, KEY_WAKEUP);
 
 	device_init_wakeup(&pdev->dev, 1);
