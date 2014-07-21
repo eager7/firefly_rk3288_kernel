@@ -150,6 +150,13 @@
 		rockchip,prop = <PRMRY>;//<EXTEND>
 		status = "okay";
 	};
+	
+	firefly-led{
+		compatible = "firefly,led";
+		led-work = <&gpio8 GPIO_A1 GPIO_ACTIVE_LOW>;
+		led-power = <&gpio8 GPIO_A2 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
 
 	usb_control {
 		compatible = "rockchip,rk3288-usb-control";
