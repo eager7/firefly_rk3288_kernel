@@ -502,13 +502,13 @@
 };
 
 &adc {
-	status = "disabled";
+	status = "okay";
 
 	key {
 		compatible = "rockchip,key";
-		/*
-		io-channels = <&adc 1>;
 		
+		io-channels = <&adc 1>;
+		/*
 		vol-up-key {
 			linux,code = <115>;
 			label = "volume up";
