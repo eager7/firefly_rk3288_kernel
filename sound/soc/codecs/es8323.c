@@ -1069,7 +1069,8 @@ snd_soc_write(codec, 0x06,0xc3);   //pdn_ana=0,ibiasgen_pdn=0
 snd_soc_write(codec, 0x09,0x88);  //ADC L/R PGA =  +24dB
 //----------------------------------------------------------------------------------------------------------------
 snd_soc_write(codec, 0x0a,0xf0);  //ADC INPUT=LIN2/RIN2
-snd_soc_write(codec, 0x0b,0x82);  //ADC INPUT=LIN2/RIN2 //82
+// snd_soc_write(codec, 0x0b,0x02);  //ADC INPUT=LIN2/RIN2 //82
+snd_soc_write(codec, 0x0b,0x02);  //ADC INPUT=LIN1/RIN1 //02
 //-----------------------------------------------------------------------------------------------------------------
 snd_soc_write(codec, 0x0C,0x4c);  //I2S-24BIT
 snd_soc_write(codec, 0x0d,0x02);  //MCLK/LRCK=256 
