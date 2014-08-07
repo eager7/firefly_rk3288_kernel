@@ -22,19 +22,34 @@ struct sda7123_monspecs {
 	unsigned int 				mode_set;
 };
 
-struct firefly_vga_info {
-	struct platform_device		*pdev;	
+struct vga_ddc_dev
+{
+	unsigned char        *edid;
+	struct i2c_client    *client;
+	struct fb_monspecs   specs;
+	struct list_head     modelist;        //monitor mode list
+	int    modelen;                       //monitor mode list len
+//	const struct fb_videomode  *current_mode;     //current mode
 	int						video_source;
 	int						property;
-	int						mode;
+	int						modeNum;
 	struct sda7123_monspecs *vga;
 	int     gpio_sel;
 	int     gpio_sel_enable;
 	int     gpio_pwn;
 	int     gpio_pwn_enable;
+	int  ddc_check_ok;
+	int ddc_timer_start;
+	int first_start;
+	int set_mode;
 };
 
-extern struct firefly_vga_info vga_info;
+extern struct vga_ddc_dev *ddev;
+extern struct timer_list timer_vga_ddc;
+
+#define VGA_SOURCE_EXTERN 1
+#define VGA_SOURCE_INTERNAL 0
+extern void vga_switch_source(int source);
 
 //int firefly_register_display_vga(struct device *parent);
 

@@ -1,70 +1,321 @@
+
 #include <linux/module.h>
-#include <linux/device.h>
 #include <linux/i2c.h>
+#include <linux/bcd.h>
+#include <linux/rtc.h>
 #include <linux/delay.h>
-#include <linux/fcntl.h>
-#include <linux/fs.h>
+#include <linux/wakelock.h>
+#include <linux/slab.h>
+#include <linux/of_gpio.h>
+#include <linux/irqdomain.h>
+#include <linux/rk_fb.h>
 #include "firefly_vga.h"
+#define DDC_I2C_RATE		100*1000
+#define EDID_LENGTH 128
 
-static int firefly_vga_dbg_level = 1;
-module_param_named(dbg_level, firefly_vga_dbg_level, int, 0644);
+#define DEFAULT_MODE       5 
 
-#define DBG( fmt, arg...) do {            \
-    if (firefly_vga_dbg_level)                     \
-    printk(KERN_WARNING"LT8631A...%s: " fmt , __FUNCTION__, ## arg); } while (0)
+extern const struct fb_videomode sda7123_vga_mode[];
+extern int get_vga_mode_len();
 
+const struct fb_videomode *default_modedb = sda7123_vga_mode;
 
-struct firefly_vga_info vga_info;
+struct vga_ddc_dev *ddev = NULL;
 extern int firefly_register_display_vga(struct device *parent);
 
+static struct i2c_client *gClient = NULL;
 
-static int firefly_vga_initial(void)
+
+struct timer_list timer_vga_ddc;
+
+static int i2c_master_reg8_send(const struct i2c_client *client, const char reg, const char *buf, int count, int scl_rate)
 {
-	struct rk_screen screen;
-	
-	// RK1000 tvencoder i2c reg need dclk, so we open lcdc.
-	memset(&screen, 0, sizeof(struct rk_screen));
-	
-	/* screen type & face */
-	screen.type = SCREEN_RGB;
-	screen.face = OUT_P888;
-	
-	/* Screen size */
-	screen.mode.xres = 1280;
-	screen.mode.yres = 720;
-	/* Timing */
-	screen.mode.pixclock = 74250000;
-	screen.mode.refresh = 60;
-	screen.mode.left_margin = 116;
-	screen.mode.right_margin = 16;
-	screen.mode.hsync_len = 6;
-	screen.mode.upper_margin = 25;
-	screen.mode.lower_margin = 14;
-	screen.mode.vsync_len = 6;
-	
-	rk_fb_switch_screen(&screen, 2 , vga_info.video_source);
-	
+	struct i2c_adapter *adap=client->adapter;
+	struct i2c_msg msg;
+	int ret;
+	char *tx_buf = (char *)kzalloc(count + 1, GFP_KERNEL);
+	if(!tx_buf)
+		return -ENOMEM;
+	tx_buf[0] = reg;
+	memcpy(tx_buf+1, buf, count); 
 
+	msg.addr = client->addr;
+	msg.flags = client->flags;
+	msg.len = count + 1;
+	msg.buf = (char *)tx_buf;
+	msg.scl_rate = scl_rate;
+
+	ret = i2c_transfer(adap, &msg, 1);
+	kfree(tx_buf);
+	return (ret == 1) ? count : ret;
+
+}
+
+static int i2c_master_reg8_recv(const struct i2c_client *client, const char reg, char *buf, int count, int scl_rate)
+{
+	struct i2c_adapter *adap=client->adapter;
+	struct i2c_msg msgs[2];
+	int ret;
+	char reg_buf = reg;
+	
+	msgs[0].addr = client->addr;
+	msgs[0].flags = client->flags;
+	msgs[0].len = 1;
+	msgs[0].buf = &reg_buf;
+	msgs[0].scl_rate = scl_rate;
+
+	msgs[1].addr = client->addr;
+	msgs[1].flags = client->flags | I2C_M_RD;
+	msgs[1].len = count;
+	msgs[1].buf = (char *)buf;
+	msgs[1].scl_rate = scl_rate;
+
+	ret = i2c_transfer(adap, msgs, 2);
+
+	return (ret == 2)? count : ret;
+}
+
+
+static int vga_edid_i2c_read_regs(struct i2c_client *client, u8 reg, u8 buf[], unsigned len)
+{
+	int ret; 
+	ret = i2c_master_reg8_recv(client, reg, buf, len, DDC_I2C_RATE);
+	return ret; 
+}
+
+static int vga_edid_i2c_set_regs(struct i2c_client *client, u8 reg, u8 const buf[], __u16 len)
+{
+	int ret; 
+	ret = i2c_master_reg8_send(client, reg, buf, (int)len, DDC_I2C_RATE);
+	return ret;
+}
+
+
+int vga_ddc_is_ok(void)
+{
+    int rc = -1;
+	char buf[8];
+	if (ddev != NULL) {
+		rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, 8);
+		if(rc == 8) {
+			if (buf[0] == 0x00 && buf[1] == 0xff && buf[2] == 0xff && buf[3] == 0xff &&
+					buf[4] == 0xff && buf[5] == 0xff && buf[6] == 0xff && buf[7] == 0x00) {
+				//printk("vga-ddc:  is ok\n");
+				return 1;
+			} else {
+			   //	printk("vga-ddc: io error");
+			}
+		}else {
+			//printk("vga-ddc: i2c  error\n");
+		}
+	}else {
+		//printk("vga-ddc:  unknown error\n");
+	}
+		
+	return 0;
+}
+
+static int vga_edid_read(char *buf, int len)
+{
+	int rc;
+
+	if (ddev == NULL || ddev->client == NULL)
+		return -ENODEV;
+
+	if (buf == NULL)
+		return -ENOMEM;
+
+	// Check ddc i2c communication is available or not.
+	rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, 6);
+	if(rc == 6) {
+		memset(buf, 0, len);
+		// Read EDID.
+		rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, len);
+		if(rc == len)
+			return 0;
+	}
+
+	printk("unable to read EDID block.\n");
+	return -EIO;
+}
+
+
+static int vga_parse_edid(void)
+{
+	struct fb_monspecs *specs = NULL;
+	if (ddev == NULL) {
+		return -ENODEV;
+	}else {
+		specs = &ddev->specs;
+		//free old edid
+		if (ddev->edid) {
+			kfree(ddev->edid);
+			ddev->edid = NULL;
+		}
+		ddev->edid = kzalloc(EDID_LENGTH, GFP_KERNEL);
+		if (!ddev->edid)
+			return -ENOMEM;
+
+		//read edid
+		if (!vga_edid_read(ddev->edid, EDID_LENGTH)) {
+			//free old fb_monspecs
+			if(specs->modedb)
+				kfree(specs->modedb);
+			memset(specs, 0, sizeof(struct fb_monspecs));
+
+			//parse edid to fb_monspecs
+			fb_edid_to_monspecs(ddev->edid, specs);
+		}else {
+			return -EIO;
+		}
+	}
+	printk("vga-ddc: read and parse vga edid success.\n");
 	return 0;
 }
 
 
+static void vga_set_modelist(void)
+{
+	int i, j = 0, modelen = 0;
+	struct fb_videomode *mode = NULL;
+	struct list_head	*modelist  = &ddev->modelist;
+	struct fb_monspecs	*specs = &ddev->specs;
+	int pixclock;
+
+	fb_destroy_modelist(modelist);
+
+	for(i = 1; i <= specs->modedb_len; i++) {
+		mode = &specs->modedb[i % specs->modedb_len];	
+		printk("%d %d %d %d %d %d %d %d %d %d %d %d %d\n",mode->refresh,mode->xres,mode->yres,mode->pixclock,mode->left_margin,mode->right_margin,mode->upper_margin, \
+		   mode->lower_margin,mode->hsync_len,mode->vsync_len, mode->sync,mode->vmode,mode->flag);
+		pixclock = PICOS2KHZ(mode->pixclock);
+		if (pixclock < (specs->dclkmax / 1000)) {
+			for (j = 0; j < get_vga_mode_len(); j++) {
+				if (default_modedb[j].xres  == mode->xres &&
+						default_modedb[j].yres == mode->yres &&
+						    (default_modedb[j].refresh == mode->refresh ||
+							  default_modedb[j].refresh == mode->refresh + 1 ||
+							    default_modedb[j].refresh == mode->refresh -1 )) {
+					fb_add_videomode(&default_modedb[j], modelist);
+					modelen++;
+					break;
+				}
+			}
+		}
+	}
+	
+	ddev->modelen = modelen;
+}
+
+struct fb_videomode *vga_find_max_mode(void)
+{
+	struct fb_videomode *mode = NULL/*, *nearest_mode = NULL*/;
+	struct fb_monspecs *specs = NULL;
+	int i, pixclock;
+	
+	if (ddev == NULL)
+		return NULL;
+
+	specs = &ddev->specs;
+	if(specs->modedb_len) {
+
+		/* Get max resolution timing */
+		mode = &specs->modedb[0];
+		
+		for (i = 0; i < specs->modedb_len; i++) {
+			if(specs->modedb[i].xres > mode->xres)
+				mode = &specs->modedb[i];
+			else if( (specs->modedb[i].xres == mode->xres) && (specs->modedb[i].yres > mode->yres) )
+				mode = &specs->modedb[i];
+		}
+
+		// For some monitor, the max pixclock read from EDID is smaller
+		// than the clock of max resolution mode supported. We fix it.
+		pixclock = PICOS2KHZ(mode->pixclock);
+		pixclock /= 250;
+		pixclock *= 250;
+		pixclock *= 1000;
+		if(pixclock == 148250000)
+			pixclock = 148500000;
+		if(pixclock > specs->dclkmax)
+			specs->dclkmax = pixclock;
+
+
+		printk("vga-ddc: max mode %dx%d@%d[pixclock-%ld KHZ]\n", mode->xres, mode->yres,
+				mode->refresh, PICOS2KHZ(mode->pixclock));
+	}
+
+	return mode;
+}
+
+
+static struct fb_videomode *vga_find_best_mode(void)
+{
+	int res = -1;
+	struct fb_videomode *mode = NULL, *best = NULL;
+
+	res = vga_parse_edid();
+	if (res == 0) {
+		mode = vga_find_max_mode();
+		if (mode) {
+			 vga_set_modelist();
+			 best = (struct fb_videomode *)fb_find_nearest_mode(mode, &ddev->modelist);
+		}
+	} else {
+		printk("vga-ddc: read and parse edid failed errno:%d.\n", res);
+	}
+	
+
+	return best;
+}
+
+int vga_switch_default_screen(void)
+{
+	int i, mode_num = DEFAULT_MODE;
+	const struct fb_videomode *mode = NULL;
+	static int init_flag = 0;
+	
+	if (ddev == NULL) {
+		printk("vga-ddc: No DDC Dev.\n");
+		return -ENODEV;
+	}
+
+	mode = vga_find_best_mode();
+	if (mode) {
+		printk("vga-ddc: best mode %dx%d@%d[pixclock-%ld KHZ]\n", mode->xres, mode->yres,
+				mode->refresh, PICOS2KHZ(mode->pixclock));
+	    for(i = 0; i < get_vga_mode_len(); i++)
+	    {
+		    if(fb_mode_is_equal(&sda7123_vga_mode[i], mode))
+		    {	
+			   mode_num = i + 1;
+			   break;
+		    }
+	    }
+	}
+
+	return mode_num;
+}
+
+EXPORT_SYMBOL(vga_switch_default_screen);
+
+
 static void firefly_early_suspend(struct early_suspend *h)
 {
-	printk("firefly_early_suspend\n");
-	if(vga_info.vga) {
-		vga_info.vga->ddev->ops->setenable(vga_info.vga->ddev, 0);
-		vga_info.vga->suspend = 1;
+	if(ddev->vga) {
+	    printk("firefly_early_suspend \n");
+		ddev->vga->ddev->ops->setenable(ddev->vga->ddev, 0);
+		ddev->vga->suspend = 1;
 	}
 	return;
 }
 
 static void firefly_early_resume(struct early_suspend *h)
 {
-	printk("firefly vga exit early resume\n");
-	if(vga_info.vga) {
-		vga_info.vga->suspend = 0;
-		rk_display_device_enable((vga_info.vga)->ddev);
+	if(ddev->vga) {
+	    printk("firefly vga  early resume \n");
+		ddev->vga->suspend = 0;
+		rk_display_device_enable((ddev->vga)->ddev);
 	}
 	return;
 }
@@ -74,10 +325,7 @@ static int firefly_fb_event_notify(struct notifier_block *self, unsigned long ac
 	struct fb_event *event = data;
 	int blank_mode = *((int *)event->data);
 	
-	printk("%s %d (action==FB_EARLY_EVENT_BLANK %d)  (action == FB_EVENT_BLANK %d) \n",__FUNCTION__,__LINE__,(action == FB_EARLY_EVENT_BLANK), (action == FB_EVENT_BLANK));
-	
 	if (action == FB_EARLY_EVENT_BLANK) {
-	    printk("%s %d (blank_mode==FB_BLANK_UNBLANK %d)\n",__FUNCTION__,__LINE__,blank_mode==FB_BLANK_UNBLANK );
 		switch (blank_mode) {
 			case FB_BLANK_UNBLANK:
 				break;
@@ -87,7 +335,6 @@ static int firefly_fb_event_notify(struct notifier_block *self, unsigned long ac
 		}
 	}
 	else if (action == FB_EVENT_BLANK) {
-    printk("%s %d (blank_mode==FB_BLANK_UNBLANK %d)\n",__FUNCTION__,__LINE__,blank_mode==FB_BLANK_UNBLANK );
 		switch (blank_mode) {
 			case FB_BLANK_UNBLANK:
 				firefly_early_resume(NULL);
@@ -104,17 +351,64 @@ static struct notifier_block firefly_fb_notifier = {
         .notifier_call = firefly_fb_event_notify,
 };
 
-static int firefly_vga_probe(struct platform_device *pdev)
+
+
+void vga_switch_source(int source) 
 {
+   gpio_direction_output(ddev->gpio_sel, (source==VGA_SOURCE_INTERNAL) ? ddev->gpio_sel_enable:(!ddev->gpio_sel_enable));
+}
+
+extern int firefly_vga_set_mode(struct rk_display_device *device, struct fb_videomode *mode);
+extern int firefly_vga_set_enable(struct rk_display_device *device, int enable);
+
+static void vga_ddc_timer(unsigned long _data)
+{
+    int modeNum;
+    if(vga_ddc_is_ok()) {
+        if(ddev->ddc_check_ok == 0 && ddev->ddc_timer_start == 1) {
+            modeNum = vga_switch_default_screen();
+            ddev->ddc_check_ok = 1;
+            printk("VGA Devie connected %d\n",modeNum);
+            ddev->set_mode = 1;
+            firefly_vga_set_mode(NULL, &default_modedb[modeNum - 1]);
+            firefly_vga_set_enable(NULL,1);
+            ddev->set_mode = 0;
+        }
+    } else if(ddev->ddc_check_ok == 1) {
+        if(vga_ddc_is_ok() == 0) {
+            ddev->ddc_check_ok = 0;
+            printk("VGA Devie disconnect\n");
+        } 
+    }
+    
+    if(ddev->ddc_timer_start == 1) {
+      mod_timer(&timer_vga_ddc,jiffies + msecs_to_jiffies(400));
+    }
+}
+
+static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id *id)
+{
+    char buf[EDID_LENGTH];
+    struct fb_monspecs specs;
+    struct fb_videomode *moded;
     int ret = -1;
     int gpio, rc,flag;
-	struct device_node *vga_node = pdev->dev.of_node;
+    unsigned long data;
+    struct device_node *vga_node = client->dev.of_node;
+    
+	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) 
+		return -ENODEV;
 
-    memset(&vga_info, 0, sizeof(struct firefly_vga_info));
+	ddev = kzalloc(sizeof(struct vga_ddc_dev), GFP_KERNEL);
+	if (ddev == NULL) 
+		return -ENOMEM;
+	
+    INIT_LIST_HEAD(&ddev->modelist);
+	ddev->client = client;;
+    
+   
 
-    vga_info.pdev = pdev;
-
-	gpio = of_get_named_gpio_flags(vga_node,"gpio-pwn", 0,&flag);
+    gpio = of_get_named_gpio_flags(vga_node,"gpio-pwn", 0,&flag);
 	if (!gpio_is_valid(gpio)){
 		printk("invalid gpio-pwn: %d\n",gpio);
 		return -1;
@@ -125,9 +419,9 @@ static int firefly_vga_probe(struct platform_device *pdev)
 		ret = -EIO;
 		goto failed_1;
 	}
-	vga_info.gpio_pwn = gpio;
-	vga_info.gpio_pwn_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
-	gpio_direction_output(vga_info.gpio_pwn, vga_info.gpio_pwn_enable);
+	ddev->gpio_pwn = gpio;
+	ddev->gpio_pwn_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
+	gpio_direction_output(ddev->gpio_pwn, ddev->gpio_pwn_enable);
 	
 	gpio = of_get_named_gpio_flags(vga_node,"gpio-sel", 0,&flag);
 	if (!gpio_is_valid(gpio)){
@@ -140,76 +434,85 @@ static int firefly_vga_probe(struct platform_device *pdev)
 		ret = -EIO;
 		goto failed_1;
 	}
-	vga_info.gpio_sel = gpio;
-	vga_info.gpio_sel_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
-	gpio_direction_output(vga_info.gpio_sel, vga_info.gpio_sel_enable);
-
+	ddev->gpio_sel = gpio;
+	ddev->gpio_sel_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
+	gpio_direction_output(ddev->gpio_sel, ddev->gpio_sel_enable);
 	
 	of_property_read_u32(vga_node, "rockchip,source", &(rc));
-	vga_info.video_source = rc;
+	ddev->video_source = rc;
 	of_property_read_u32(vga_node, "rockchip,prop", &(rc));
-	vga_info.property = rc - 1;
+	ddev->property = rc - 1;
 	
-	vga_info.mode = 1;
-	
-	//firefly_vga_initial();
-	
-	firefly_register_display_vga(&pdev->dev);
-	
-	//fb_register_client(&firefly_fb_notifier);
-	
-	printk("%s %d\n",__FUNCTION__,__LINE__);
-	return 0;  //return Ok
+    ddev->modeNum = vga_switch_default_screen();
+    
+    vga_switch_source(VGA_SOURCE_EXTERN); 
+    
+    printk("%s: success. %d \n", __func__,ddev->modeNum);
+    
+    setup_timer(&timer_vga_ddc, vga_ddc_timer, data);
 
+    ddev->first_start = 1;
+    ddev->set_mode = 0;
+
+	firefly_register_display_vga(&client->dev);
+	
+	fb_register_client(&firefly_fb_notifier);
+	
+	return 0;
 failed_1:
 	return ret;
 }
 
-static int firefly_vga_remove(struct platform_device *pdev)
-{ 
-    return 0;
+static int  vga_edid_remove(struct i2c_client *client)
+{
+	if(ddev->edid)
+		kfree(ddev->edid);
+	if (ddev->specs.modedb)
+		kfree(ddev->specs.modedb);
+	kfree(ddev);
+	return 0;
 }
 
 
-#ifdef CONFIG_OF
-static const struct of_device_id of_rk_firefly_vga_match[] = {
-	{ .compatible = "firefly,vga" },
-	{ /* Sentinel */ }
-};
-#endif
 
-static struct platform_driver firefly_vga_driver = {
-	.probe		= firefly_vga_probe,
-	.remove		= firefly_vga_remove,
+static const struct i2c_device_id vga_edid_id[] = {
+	{ "vga_edid", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(i2c, vga_edid_id);
+
+static struct of_device_id rtc_dt_ids[] = {
+	{ .compatible = "firefly,vga_ddc" },
+	{},
+};
+
+struct i2c_driver vga_edid_driver = {
 	.driver		= {
-		.name	= "firefly-vga",
+		.name	= "vga_edid",
 		.owner	= THIS_MODULE,
-#ifdef CONFIG_OF
-		.of_match_table	= of_rk_firefly_vga_match,
-#endif
+		.of_match_table = of_match_ptr(rtc_dt_ids),
 	},
-
+	.probe		= vga_edid_probe,
+	.remove		= vga_edid_remove,
+	.id_table	= vga_edid_id,
 };
 
-
-static int __init firefly_vga_init(void)
+static int __init vga_edid_init(void)
 {
-    printk(KERN_INFO "Enter %s\n", __FUNCTION__);
-    return platform_driver_register(&firefly_vga_driver);
+	return i2c_add_driver(&vga_edid_driver);
 }
 
-static void __exit firefly_vga_exit(void)
+static void __exit vga_edid_exit(void)
 {
-	platform_driver_unregister(&firefly_vga_driver);
-    printk(KERN_INFO "Enter %s\n", __FUNCTION__);
+	i2c_del_driver(&vga_edid_driver);
 }
 
+
+late_initcall(vga_edid_init);
+module_exit(vga_edid_exit);
 
 MODULE_AUTHOR("teefirefly@gmail.com");
-MODULE_DESCRIPTION("Firefly-RK3288 VGA driver");
+MODULE_DESCRIPTION("Firefly vga edid driver");
 MODULE_LICENSE("GPL");
-
-late_initcall(firefly_vga_init);
-module_exit(firefly_vga_exit);
 
 
