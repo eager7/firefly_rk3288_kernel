@@ -10,10 +10,11 @@
 #include <linux/irqdomain.h>
 #include <linux/rk_fb.h>
 #include "firefly_vga.h"
+
 #define DDC_I2C_RATE		100*1000
 #define EDID_LENGTH 128
 
-#define DEFAULT_MODE       5 
+#define DEFAULT_MODE       4 
 
 extern const struct fb_videomode sda7123_vga_mode[];
 extern int get_vga_mode_len();
@@ -186,8 +187,8 @@ static void vga_set_modelist(void)
 
 	for(i = 1; i <= specs->modedb_len; i++) {
 		mode = &specs->modedb[i % specs->modedb_len];	
-		printk("%d %d %d %d %d %d %d %d %d %d %d %d %d\n",mode->refresh,mode->xres,mode->yres,mode->pixclock,mode->left_margin,mode->right_margin,mode->upper_margin, \
-		   mode->lower_margin,mode->hsync_len,mode->vsync_len, mode->sync,mode->vmode,mode->flag);
+		//printk("%d %d %d %d %d %d %d %d %d %d %d %d %d\n",mode->refresh,mode->xres,mode->yres,mode->pixclock,mode->left_margin,mode->right_margin,mode->upper_margin, \
+		 //  mode->lower_margin,mode->hsync_len,mode->vsync_len, mode->sync,mode->vmode,mode->flag);
 		pixclock = PICOS2KHZ(mode->pixclock);
 		if (pixclock < (specs->dclkmax / 1000)) {
 			for (j = 0; j < get_vga_mode_len(); j++) {
@@ -324,20 +325,34 @@ static int firefly_fb_event_notify(struct notifier_block *self, unsigned long ac
 {
 	struct fb_event *event = data;
 	int blank_mode = *((int *)event->data);
-	
+	struct delayed_work *delay_work;
+
 	if (action == FB_EARLY_EVENT_BLANK) {
 		switch (blank_mode) {
 			case FB_BLANK_UNBLANK:
 				break;
 			default:
-				firefly_early_suspend(NULL);
+			    
+				if(!ddev->vga->suspend) {
+					delay_work = vga_submit_work(ddev->vga, VGA_SUSPEND_CTL, 0, NULL);
+					if(delay_work)
+						flush_delayed_work(delay_work);
+					//rk3288_hdmi_clk_disable(hdmi_dev);
+				}
+				//firefly_early_suspend(NULL);
 				break;
 		}
 	}
 	else if (action == FB_EVENT_BLANK) {
 		switch (blank_mode) {
 			case FB_BLANK_UNBLANK:
-				firefly_early_resume(NULL);
+				printk("resume VGA\n");
+				if(ddev->vga->suspend) {
+					//rk3288_hdmi_clk_enable(hdmi_dev);
+					//hdmi_dev_initial(hdmi_dev, NULL);
+					vga_submit_work(ddev->vga, VGA_RESUME_CTL, 0, NULL);
+				}
+				//firefly_early_resume(NULL);
 				break;
 			default:
 				break;
@@ -358,33 +373,127 @@ void vga_switch_source(int source)
    gpio_direction_output(ddev->gpio_sel, (source==VGA_SOURCE_INTERNAL) ? ddev->gpio_sel_enable:(!ddev->gpio_sel_enable));
 }
 
-extern int firefly_vga_set_mode(struct rk_display_device *device, struct fb_videomode *mode);
-extern int firefly_vga_set_enable(struct rk_display_device *device, int enable);
 
-static void vga_ddc_timer(unsigned long _data)
+static void vga_work_queue(struct work_struct *work)
 {
-    int modeNum;
-    if(vga_ddc_is_ok()) {
-        if(ddev->ddc_check_ok == 0 && ddev->ddc_timer_start == 1) {
-            modeNum = vga_switch_default_screen();
-            ddev->ddc_check_ok = 1;
-            printk("VGA Devie connected %d\n",modeNum);
-            ddev->set_mode = 1;
-            firefly_vga_set_mode(NULL, &default_modedb[modeNum - 1]);
-            firefly_vga_set_enable(NULL,1);
-            ddev->set_mode = 0;
-        }
-    } else if(ddev->ddc_check_ok == 1) {
-        if(vga_ddc_is_ok() == 0) {
-            ddev->ddc_check_ok = 0;
-            printk("VGA Devie disconnect\n");
-        } 
-    }
-    
-    if(ddev->ddc_timer_start == 1) {
-      mod_timer(&timer_vga_ddc,jiffies + msecs_to_jiffies(400));
-    }
+	struct vga_delayed_work *vga_w =
+		container_of(work, struct vga_delayed_work, work.work);
+	struct sda7123_monspecs *vga = vga_w->vga;
+	int event = vga_w->event;
+	int modeNum;
+	
+	//printk("%s event %04x\n", __FUNCTION__, event);
+	
+	mutex_lock(&vga->lock);
+
+	switch(event) {
+		case VGA_ENABLE_CTL:
+		  //  printk("%s VGA_ENABLE_CTL %d %d\n",__FUNCTION__,vga->enable,vga->suspend);
+			if(!vga->enable || vga->mode_change == 1) {
+				vga->enable = 1;
+				vga->mode_change = 0;
+				if(!vga->suspend) {
+					firefly_vga_enable();
+				}
+			}
+			break;
+		case VGA_DISABLE_CTL:
+			if(vga->enable) {
+				if(!vga->suspend) {
+					firefly_vga_standby();
+				}
+				vga->enable = 0;
+			}
+			break;
+		case VGA_RESUME_CTL:
+			if(vga->suspend) {
+	            if(vga->enable) {
+		            vga->suspend = 0;
+		            rk_display_device_enable(vga->ddev);
+	            }
+			}
+			break;
+		case VGA_SUSPEND_CTL:
+			if(!vga->suspend) {
+			   if(vga->enable) {
+	                if(vga->ddev->ops->setenable) {
+		                firefly_vga_standby();
+		                vga->suspend = 1;
+	                }
+			   }
+			}
+			break;
+		case VGA_TIMER_CHECK:
+            if(vga_ddc_is_ok()) {
+                if(ddev->ddc_check_ok == 0 && ddev->ddc_timer_start == 1) {
+                    modeNum = vga_switch_default_screen();
+                    ddev->ddc_check_ok = 1;
+                    printk("VGA Devie connected %d\n",modeNum);
+                    ddev->set_mode = 1;
+                    firefly_vga_set_mode(NULL, &default_modedb[modeNum - 1]);
+                    //firefly_vga_set_enable(NULL,1);
+                    firefly_vga_enable();
+                    ddev->set_mode = 0;
+	                #ifdef CONFIG_SWITCH
+	                switch_set_state(&(ddev->switchdev), 1);
+	                #endif
+                }
+            } else if(ddev->ddc_check_ok == 1) {
+                if(vga_ddc_is_ok() == 0) {
+                    ddev->ddc_check_ok = 0;
+	                #ifdef CONFIG_SWITCH
+	                switch_set_state(&(ddev->switchdev), 0);
+	                #endif
+                    printk("VGA Devie disconnect\n");
+                } 
+            }
+            if(ddev->first_start < 8)
+                ddev->first_start++;
+            
+            if(ddev->ddc_timer_start == 1) {
+              vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
+            }
+			break;
+		default:
+			printk(KERN_ERR "HDMI: hdmi_work_queue() unkown event\n");
+			break;
+	}
+	
+	if(vga_w->data)
+		kfree(vga_w->data);
+	kfree(vga_w);
+	
+	//printk("hdmi_work_queue() - exit\n");
+	mutex_unlock(&vga->lock);
 }
+
+
+
+struct delayed_work *vga_submit_work(struct sda7123_monspecs *vga, int event, int delay, void *data)
+{
+	struct vga_delayed_work *work;
+
+	//printk("%s event %04x delay %d\n", __FUNCTION__, event, delay);
+	
+	work = kmalloc(sizeof(struct vga_delayed_work), GFP_ATOMIC);
+
+	if (work) {
+		INIT_DELAYED_WORK(&work->work, vga_work_queue);
+		work->vga = vga;
+		work->event = event;
+		work->data = data;
+		queue_delayed_work(vga->workqueue,
+				   &work->work,
+				   msecs_to_jiffies(delay));
+	} else {
+		printk(KERN_WARNING "VGA: Cannot allocate memory to "
+				    "create work\n");
+		return 0;
+	}
+	
+	return &work->work;
+}
+
 
 static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
@@ -404,9 +513,7 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 		return -ENOMEM;
 	
     INIT_LIST_HEAD(&ddev->modelist);
-	ddev->client = client;;
-    
-   
+	ddev->client = client;
 
     gpio = of_get_named_gpio_flags(vga_node,"gpio-pwn", 0,&flag);
 	if (!gpio_is_valid(gpio)){
@@ -449,7 +556,22 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
     
     printk("%s: success. %d \n", __func__,ddev->modeNum);
     
-    setup_timer(&timer_vga_ddc, vga_ddc_timer, data);
+
+    
+    //setup_timer(&timer_vga_ddc, vga_ddc_timer, data);
+    //INIT_DELAYED_WORK(&ddev->work, vga_ddc_timer);
+    //schedule_work(&chip->work);
+    memset(&vga_monspecs, 0, sizeof(struct sda7123_monspecs));
+    
+    ddev->vga = &vga_monspecs;
+    
+    mutex_init(&ddev->vga->lock);
+    
+	ddev->vga->workqueue = create_singlethread_workqueue("vga");
+	if (ddev->vga->workqueue == NULL) {
+		printk(KERN_ERR "vga,: create workqueue failed.\n");
+		goto failed_1;
+	}
 
     ddev->first_start = 1;
     ddev->set_mode = 0;
@@ -457,6 +579,11 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	firefly_register_display_vga(&client->dev);
 	
 	fb_register_client(&firefly_fb_notifier);
+	
+	#ifdef CONFIG_SWITCH
+	ddev->switchdev.name="vga";
+	switch_dev_register(&(ddev->switchdev));
+	#endif
 	
 	return 0;
 failed_1:
@@ -470,6 +597,10 @@ static int  vga_edid_remove(struct i2c_client *client)
 	if (ddev->specs.modedb)
 		kfree(ddev->specs.modedb);
 	kfree(ddev);
+	#ifdef CONFIG_SWITCH
+	switch_dev_unregister(&(ddev->switchdev));
+	//kfree(ddev->switchdev.name);
+	#endif
 	return 0;
 }
 
