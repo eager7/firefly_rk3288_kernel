@@ -139,6 +139,7 @@
 	rkxx-remotectl{
 		compatible = "rockchip,remotectl";
                 module-gpios = <&gpio7 GPIO_A0 GPIO_ACTIVE_LOW>;
+        led-power = <&gpio8 GPIO_A2 GPIO_ACTIVE_LOW>;
 		status = "okay";
 	};
 	

@@ -91,23 +91,18 @@ struct rkxx_remotectl_drvdata {
     struct rkxx_remotectl_suspend_data remotectl_suspend_data;
 };
 
-#define REMOTE_LED
-#ifdef REMOTE_LED
+#ifdef CONFIG_FIREFLY_POWER_LED
 
 struct timer_list timer_led;
-
-extern void firefly_leds_ctrl_ex(int led_num, int value);
-
+int led_gpio;
+int led_enable_value;
 static int remotectl_led_ctrl(int state)
 {
-#ifdef CONFIG_LEDS_FIREFLY
-#define POWER_LED 0
     if(state) {
-        firefly_leds_ctrl_ex(POWER_LED,1);
+        gpio_direction_output(led_gpio, led_enable_value);
     } else {
-        firefly_leds_ctrl_ex(POWER_LED,0);
+        gpio_direction_output(led_gpio, !(led_enable_value));
     }
-#endif
 }
 
 static void led_timer(unsigned long _data)
@@ -354,10 +349,6 @@ static void remotectl_do_something(unsigned long  data)
         {
             ddata->scanData <<= 1;
             ddata->count ++;
-            #ifdef REMOTE_LED
-            mod_timer(&timer_led,jiffies + msecs_to_jiffies(50));
-            remotectl_led_ctrl(0);    
-            #endif
             
             if ((TIME_BIT1_MIN < ddata->period) && (ddata->period < TIME_BIT1_MAX)){
                 ddata->scanData |= 0x01;
@@ -365,6 +356,10 @@ static void remotectl_do_something(unsigned long  data)
 		
             if (ddata->count == 0x10){//16 bit user code
                 //printk("u=0x%x\n",((ddata->scanData)&0xFFFF));
+                #ifdef CONFIG_FIREFLY_POWER_LED
+                mod_timer(&timer_led,jiffies + msecs_to_jiffies(50));
+                remotectl_led_ctrl(0);    
+                #endif
                 if (remotectl_keybdNum_lookup(ddata)){
                     ddata->state = RMC_GETDATA;
                     ddata->scanData = 0;
@@ -387,7 +382,6 @@ static void remotectl_do_something(unsigned long  data)
             }           
             if (ddata->count == 0x10){
                 //printk("RMC_GETDATA=%x\n",(ddata->scanData&0xFFFF));
-
                 if ((ddata->scanData&0x0ff) == ((~ddata->scanData >> 8)&0x0ff)){
                     if (remotectl_keycode_lookup(ddata)){
                         ddata->press = 1;
@@ -583,8 +577,8 @@ static int remotectl_probe(struct platform_device *pdev)
     struct input_dev *input;
     unsigned int gpio;
     int i, j;
-    int irq;
-    int error = 0;
+    int irq, flag;
+    int error = 0,ret;
 
     printk("++++++++remotectl driver V1.0 for linux 3.10\n");
 
@@ -674,7 +668,21 @@ static int remotectl_probe(struct platform_device *pdev)
 		pr_err("gpio-keys: Unable to register input device, error: %d\n", error);
 		goto fail2;
 	}
-#ifdef REMOTE_LED
+#ifdef CONFIG_FIREFLY_POWER_LED
+	gpio = of_get_named_gpio_flags(node,"led-power", 0,&flag);
+	if (!gpio_is_valid(gpio)){
+		printk("invalid led-power: %d\n",gpio);
+		goto fail2;
+	} 
+    ret = gpio_request(gpio, "led_power");
+	if (ret != 0) {
+		gpio_free(gpio);
+		ret = -EIO;
+		goto fail2;
+	}
+	led_gpio = gpio;
+	led_enable_value = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
+	gpio_direction_output(led_gpio, led_enable_value);
 	setup_timer(&timer_led, led_timer, (unsigned long)ddata);
 #endif   
 	input_set_capability(input, EV_KEY, KEY_WAKEUP);
