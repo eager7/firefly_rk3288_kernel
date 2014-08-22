@@ -736,7 +736,7 @@
 			sdmmc0_clk: sdmmc0-clk {
 				rockchip,pins = <SDMMC0_CLKOUT>;
 				rockchip,pull = <VALUE_PULL_DISABLE>;
-				rockchip,drive = <VALUE_DRV_4MA>;
+				rockchip,drive = <VALUE_DRV_12MA>;
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 			};
 
