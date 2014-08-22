@@ -62,6 +62,7 @@ struct act8846 {
 	int pmic_sleep_gpio; /* */
 	int pmic_hold_gpio; /* */
 	int pmic_cpu_det_gpio;
+	int pmic_usb_hub_reset_gpio;
 	unsigned int dcdc_slp_voltage[3]; /* buckx_voltage in uV */
 	bool pmic_sleep;
 	struct regmap *regmap;
@@ -788,6 +789,11 @@ static struct act8846_board *act8846_parse_dt(struct act8846 *act8846)
         if (!gpio_is_valid(gpio))
                 printk("invalid gpio: %d\n",gpio);
     pdata->pmic_cpu_det_gpio = gpio;
+    
+    gpio = of_get_named_gpio(act8846_pmic_np,"usb_hub_reset_gpio", 0);
+        if (!gpio_is_valid(gpio))
+                printk("lhm invalid gpio: %d\n",gpio);
+    pdata->pmic_usb_hub_reset_gpio = gpio;
 
 	return pdata;
 }
@@ -976,6 +982,20 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
             gpio_direction_output(act8846->pmic_cpu_det_gpio, 1);
             ret = gpio_get_value(act8846->pmic_cpu_det_gpio);
             printk("%s: act8846_pmic_cpu_det_gpio=%x\n", __func__, ret);
+    }
+    #endif
+    
+    #ifdef CONFIG_OF
+    act8846->pmic_usb_hub_reset_gpio = pdev->pmic_usb_hub_reset_gpio;
+    if (act8846->pmic_usb_hub_reset_gpio) {
+            ret = gpio_request(act8846->pmic_usb_hub_reset_gpio, "act8846_pmic_usb_hub_reset_gpio");
+            if (ret < 0) {
+                dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",       act8846->pmic_usb_hub_reset_gpio, ret);
+                return IRQ_NONE;
+            }
+            gpio_direction_output(act8846->pmic_usb_hub_reset_gpio, 1);
+            ret = gpio_get_value(act8846->pmic_usb_hub_reset_gpio);
+            printk("%s: act8846_pmic_usb_hub_reset_gpio=%x\n", __func__, ret);
     }
     #endif
 	
