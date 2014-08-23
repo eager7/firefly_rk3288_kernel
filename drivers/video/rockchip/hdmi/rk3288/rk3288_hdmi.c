@@ -112,11 +112,15 @@ static void rk3288_hdmi_early_suspend(struct early_suspend *h)
 {
 	struct hdmi *hdmi = hdmi_dev->hdmi;
 	struct delay_work *delay_work;
+	struct pinctrl_state *gpio_state;
 	HDMIDBG("hdmi enter early suspend \n");	
 	//hdmi_suspend(hdmi);
 	delay_work = hdmi_submit_work(hdmi, HDMI_SUSPEND_CTL, 0, NULL);
 	if(delay_work)
-		flush_delayed_work(delay_work);
+                flush_delayed_work_sync(delay_work);
+        /* iomux to gpio and pull down when suspend */
+        gpio_state = pinctrl_lookup_state(hdmi_dev->dev->pins->p, "gpio");
+        pinctrl_select_state(hdmi_dev->dev->pins->p, gpio_state);
 	rk3288_hdmi_clk_disable(hdmi_dev);
 	return;
 }
@@ -126,6 +130,9 @@ static void rk3288_hdmi_early_resume(struct early_suspend *h)
 	struct hdmi *hdmi = hdmi_dev->hdmi;
 	
 	HDMIDBG("hdmi exit early resume\n");
+     /* iomux to default state for hdmi use when resume */
+       pinctrl_select_state(hdmi_dev->dev->pins->p,
+                            hdmi_dev->dev->pins->default_state)
 	rk3288_hdmi_clk_enable(hdmi_dev);
 	hdmi_dev_initial(hdmi_dev);
 	if(hdmi->ops->hdcp_power_on_cb)
@@ -312,6 +319,8 @@ static int rk3288_hdmi_probe (struct platform_device *pdev)
 	hdmi_dev_initial(hdmi_dev, &rk3288_hdmi_ops);
 	
 	// Register HDMI device	
+        pinctrl_select_state(hdmi_dev->dev->pins->p,
+                            hdmi_dev->dev->pins->default_state);
 	rk3288_hdmi_property.name = (char*)pdev->name;
 	rk3288_hdmi_property.priv = hdmi_dev;
 	hdmi_dev->hdmi = hdmi_register(&rk3288_hdmi_property, &rk3288_hdmi_ops);
@@ -404,4 +413,4 @@ static void __exit rk3288_hdmi_exit(void)
 
 //fs_initcall(rk3288_hdmi_init);
 device_initcall_sync(rk3288_hdmi_init);
-module_exit(rk3288_hdmi_exit);
+//module_exit(rk3288_hdmi_exit);
