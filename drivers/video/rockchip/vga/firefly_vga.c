@@ -301,25 +301,6 @@ int vga_switch_default_screen(void)
 EXPORT_SYMBOL(vga_switch_default_screen);
 
 
-static void firefly_early_suspend(struct early_suspend *h)
-{
-	if(ddev->vga) {
-	    printk("firefly_early_suspend \n");
-		ddev->vga->ddev->ops->setenable(ddev->vga->ddev, 0);
-		ddev->vga->suspend = 1;
-	}
-	return;
-}
-
-static void firefly_early_resume(struct early_suspend *h)
-{
-	if(ddev->vga) {
-	    printk("firefly vga  early resume \n");
-		ddev->vga->suspend = 0;
-		rk_display_device_enable((ddev->vga)->ddev);
-	}
-	return;
-}
 
 static int firefly_fb_event_notify(struct notifier_block *self, unsigned long action, void *data)
 {
@@ -332,27 +313,20 @@ static int firefly_fb_event_notify(struct notifier_block *self, unsigned long ac
 			case FB_BLANK_UNBLANK:
 				break;
 			default:
-			    
 				if(!ddev->vga->suspend) {
 					delay_work = vga_submit_work(ddev->vga, VGA_SUSPEND_CTL, 0, NULL);
 					if(delay_work)
 						flush_delayed_work(delay_work);
-					//rk3288_hdmi_clk_disable(hdmi_dev);
 				}
-				//firefly_early_suspend(NULL);
 				break;
 		}
 	}
 	else if (action == FB_EVENT_BLANK) {
 		switch (blank_mode) {
 			case FB_BLANK_UNBLANK:
-				printk("resume VGA\n");
 				if(ddev->vga->suspend) {
-					//rk3288_hdmi_clk_enable(hdmi_dev);
-					//hdmi_dev_initial(hdmi_dev, NULL);
 					vga_submit_work(ddev->vga, VGA_RESUME_CTL, 0, NULL);
 				}
-				//firefly_early_resume(NULL);
 				break;
 			default:
 				break;
@@ -389,11 +363,12 @@ static void vga_work_queue(struct work_struct *work)
 	switch(event) {
 		case VGA_ENABLE_CTL:
 		  //  printk("%s VGA_ENABLE_CTL %d %d\n",__FUNCTION__,vga->enable,vga->suspend);
-			if(!vga->enable || vga->mode_change == 1) {
+			if(!vga->enable || vga->mode_change == 1 ) {
 				vga->enable = 1;
 				vga->mode_change = 0;
 				if(!vga->suspend) {
 					firefly_vga_enable();
+				    printk("VGA ENABLE\n");
 				}
 			}
 			break;
@@ -401,6 +376,7 @@ static void vga_work_queue(struct work_struct *work)
 			if(vga->enable) {
 				if(!vga->suspend) {
 					firefly_vga_standby();
+					printk("VGA DISABLE\n");
 				}
 				vga->enable = 0;
 			}
@@ -409,7 +385,9 @@ static void vga_work_queue(struct work_struct *work)
 			if(vga->suspend) {
 	            if(vga->enable) {
 		            vga->suspend = 0;
-		            rk_display_device_enable(vga->ddev);
+		            printk("VGA RESUME\n");
+		            //rk_display_device_enable(vga->ddev);
+		            firefly_vga_enable();
 	            }
 			}
 			break;
@@ -418,6 +396,7 @@ static void vga_work_queue(struct work_struct *work)
 			   if(vga->enable) {
 	                if(vga->ddev->ops->setenable) {
 		                firefly_vga_standby();
+		                printk("VGA SUSPEND\n");
 		                vga->suspend = 1;
 	                }
 			   }
@@ -431,7 +410,6 @@ static void vga_work_queue(struct work_struct *work)
                     printk("VGA Devie connected %d\n",modeNum);
                     ddev->set_mode = 1;
                     firefly_vga_set_mode(NULL, &default_modedb[modeNum - 1]);
-                    //firefly_vga_set_enable(NULL,1);
                     firefly_vga_enable();
                     ddev->set_mode = 0;
 	                #ifdef CONFIG_SWITCH
@@ -442,18 +420,19 @@ static void vga_work_queue(struct work_struct *work)
                 if(vga_ddc_is_ok() == 0) {
                     ddev->ddc_check_ok = 0;
 	                #ifdef CONFIG_SWITCH
-	                switch_set_state(&(ddev->switchdev), 0);
+	                //switch_set_state(&(ddev->switchdev), 0);
 	                #endif
                     printk("VGA Devie disconnect\n");
                 } 
             }
-            if(ddev->first_start < 8)
-                ddev->first_start++;
             
             if(ddev->ddc_timer_start == 1) {
               vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
             }
 			break;
+		case VGA_TIMER_DELAY:
+		    ddev->first_start = 0;
+		    break;
 		default:
 			printk(KERN_ERR "HDMI: hdmi_work_queue() unkown event\n");
 			break;
@@ -585,6 +564,8 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	switch_dev_register(&(ddev->switchdev));
 	#endif
 	
+	vga_submit_work(ddev->vga, VGA_TIMER_DELAY, 8000, NULL);
+	
 	return 0;
 failed_1:
 	return ret;
@@ -603,7 +584,6 @@ static int  vga_edid_remove(struct i2c_client *client)
 	#endif
 	return 0;
 }
-
 
 
 static const struct i2c_device_id vga_edid_id[] = {
@@ -639,7 +619,7 @@ static void __exit vga_edid_exit(void)
 }
 
 
-late_initcall(vga_edid_init);
+module_init(vga_edid_init);
 module_exit(vga_edid_exit);
 
 MODULE_AUTHOR("teefirefly@gmail.com");

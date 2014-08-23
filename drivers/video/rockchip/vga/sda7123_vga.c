@@ -12,9 +12,9 @@ const struct fb_videomode sda7123_vga_mode[] = {
 	{"800x600p@60Hz",	60,			800,	600,	40000000,	88,	    40,	    23,		1,		128,	4,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		0	},	
 	{"1024x768p@60Hz",	60,			1024,	768,	65000000,	160,	24,		29,		3,		136,	6,		0,			0,		0	},
 	{"1280x720p@60Hz",	60,			1280,	720,	74250000,	220,   110,  	20,		5,		 40,	5,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		0	},	
-	//{"1280x1024p@60Hz",	60,			1280,	1024,	108000000,	248,	48,		38,		1,		112,	3,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		6	},
+	{"1280x1024p@60Hz",	60,			1280,	1024,	108000000,	248,	48,		38,		1,		112,	3,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		6	},
 	{"1366x768p@60Hz",	60,			1366,	768,	85500000,	213,	70,		24,		3,		143,	3,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		0	},
-	{"1440x900p@60Hz",	60,			1440,	900,	106507000,	232,	80,		25,		3,		152,	6,		FB_SYNC_VERT_HIGH_ACT,			0,		0	},
+	{"1440x900p@60Hz",	60,			1440,	900,	106500000,	232,	80,		25,		3,		152,	6,		FB_SYNC_VERT_HIGH_ACT,			0,		0	},
 	{"1600x900p@60Hz",	60,			1600,	900,	108000000,	 96,	24,	    96,		1,		 80,	3,		FB_SYNC_VERT_HIGH_ACT | FB_SYNC_HOR_HIGH_ACT,			0,		0	},
 	{"1680x1050p@60Hz",	60,			1680,	1050,	146200000,	280,	104,	30,		3,		176,	6,		FB_SYNC_VERT_HIGH_ACT,			0,		0	},
 	{"1920x1080p@60Hz",	60,			1920,	1080,	148500000,	148,	88,		36,		4,		 44,	5,		FB_SYNC_HOR_HIGH_ACT | FB_SYNC_VERT_HIGH_ACT,			0,		0	},
@@ -105,8 +105,6 @@ int firefly_vga_standby(void)
 	rk_fb_switch_screen(&screen, 0 , ddev->video_source);
 	
 	ddev->ddc_timer_start = 0;
-	
-	printk("firefly vga standby\n");
 
 	return 0;
 }
@@ -120,7 +118,7 @@ int firefly_vga_enable(void)
         vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
     }
     ddev->ddc_timer_start = 1;
-    printk("%s %d exit\n",__FUNCTION__,__LINE__);
+    //printk("%s %d exit\n",__FUNCTION__,__LINE__);
 }
 
 int firefly_vga_set_enable(struct rk_display_device *device, int enable)
@@ -169,9 +167,11 @@ int firefly_vga_set_mode(struct rk_display_device *device, struct fb_videomode *
 {
 	int i;
 	
-	if(ddev->first_start < 8 && ddev->set_mode == 0) return 0;
-	
 	printk("%s %d\n",__FUNCTION__,__LINE__);
+	
+	if(ddev->first_start == 1 && ddev->set_mode == 0) return 0;
+	
+	//
     
 	for(i = 0; i < MODE_LEN; i++)
 	{
@@ -183,7 +183,7 @@ int firefly_vga_set_mode(struct rk_display_device *device, struct fb_videomode *
 				vga_monspecs.mode_change = 1;
 				vga_monspecs.mode = (struct fb_videomode *)&sda7123_vga_mode[i];
 			}
-			//printk("%s %d %d %d %d\n",__FUNCTION__,__LINE__,vga_monspecs.mode_set,vga_monspecs.mode.xres,vga_monspecs.mode.yres);
+			printk("%s %d %d %d %d %d \n",__FUNCTION__,__LINE__,vga_monspecs.mode->xres,vga_monspecs.mode->yres,vga_monspecs.mode->refresh,vga_monspecs.mode->pixclock);
 			return 0;
 		}
 	}

@@ -23,6 +23,7 @@
 #define VGA_SUSPEND_CTL		(VGA_SYSFS_SRC	| 2)
 #define VGA_RESUME_CTL		(VGA_SYSFS_SRC	| 3)
 #define VGA_TIMER_CHECK		(VGA_SYSFS_SRC	| 4)
+#define VGA_TIMER_DELAY		(VGA_SYSFS_SRC	| 5)
 
 struct sda7123_monspecs {
 	struct rk_display_device	*ddev;
