@@ -67,8 +67,12 @@ int es8323_hdmi_ctrl=0;
 #define INVALID_GPIO -1
 int es8323_spk_con_gpio = INVALID_GPIO;
 int es8323_hp_det_gpio = INVALID_GPIO;
+int es8323_hp_det_action_value = 0;
+int es8323_hp_mic_only = 0;
+char es8323_mic_state = 0;
 static int HP_IRQ=0;
 static int hp_irq_flag = 0;
+int  mic_state_switch();
 //#define SPK_CTL             RK29_PIN6_PB6
 //#define EAR_CON_PIN             RK29_PIN6_PB5
 #undef EAR_CON_PIN
@@ -127,13 +131,17 @@ static void hp_detect_do_switch(struct work_struct *work)
 
 	hp_irq_flag = 1;
 
-	if(0 == gpio_get_value(es8323_hp_det_gpio)){
-		printk("hp_det = 0,insert hp\n");
-		gpio_set_value(es8323_spk_con_gpio,0);
-	}else if(1 == gpio_get_value(es8323_hp_det_gpio)){
-		printk("hp_det = 1,deinsert hp\n");
-		gpio_set_value(es8323_spk_con_gpio,1);
-	}	
+    if(es8323_hp_mic_only == 0) {
+	    if(es8323_hp_det_action_value == gpio_get_value(es8323_hp_det_gpio)){
+		    printk("hp_det = 0,insert hp\n");
+		    gpio_set_value(es8323_spk_con_gpio,0);
+	    }else if(!(es8323_hp_det_action_value) == gpio_get_value(es8323_hp_det_gpio)){
+		    printk("hp_det = 1,deinsert hp\n");
+		    gpio_set_value(es8323_spk_con_gpio,1);
+	    }	
+	} else {
+	    mic_state_switch();
+	}
 	enable_irq(irq);
 }
 
@@ -1282,6 +1290,111 @@ static struct device *es8323_dev = NULL;
 static struct class *es8323_class = NULL;
 static DEVICE_ATTR(es8323, 0664, es8323_show, es8323_store);
 
+
+
+int  mic_state_switch()
+{
+    printk("%s %d\n",__FUNCTION__, es8323_mic_state);
+    if(es8323_mic_state == 0) {
+        if(es8323_hp_det_action_value == gpio_get_value(es8323_hp_det_gpio)){
+	        printk("hp_det = 0,insert hp\n");
+	        printk("hp mic use intern\n");
+	        snd_soc_write(es8323_codec, 0x0b,0x02);
+        }else if(!(es8323_hp_det_action_value) == gpio_get_value(es8323_hp_det_gpio)){
+	        printk("hp_det = 1,deinsert hp\n");
+	        printk("hp mic use extern\n");
+	        snd_soc_write(es8323_codec, 0x0b,0x82);
+        } 
+    } else if(es8323_mic_state == 1) {
+        printk("hp mic use intern\n");
+        snd_soc_write(es8323_codec, 0x0b,0x02);
+    } else if(es8323_mic_state == 2) {
+        printk("hp mic use extern\n");
+        snd_soc_write(es8323_codec, 0x0b,0x82);
+    }
+    
+}
+
+#define MIC_STATE_INIT  0
+#define MIC_STATE_WIRTE 1
+#define MIC_STATE_READ  2
+int es8323_mic_state_ctrl(int cmd, char *ch) {
+    struct file *fp;
+    mm_segment_t fs;
+    char buf[2];
+    loff_t pos;
+    fp = filp_open("/data/es8323_mic_state", O_RDWR | O_CREAT, 0666);
+    if (IS_ERR(fp)) {
+        printk("es8323_create file error\n");
+        return -1;
+    }
+    fs = get_fs();
+    set_fs(KERNEL_DS);
+    pos = 0;
+    vfs_read(fp, buf, sizeof(buf), &pos);
+    buf[1] = 0;
+    printk("es8323_mic_state_ctrl read: %s\n", buf);
+    if(cmd == MIC_STATE_INIT) {
+        if(buf[0] >= '0' && buf[0] <= '2') {
+            es8323_mic_state = buf[0] - '0';
+        } else {
+            es8323_mic_state = 0;
+            buf[0] = '0';
+            buf[1] = 0;
+            pos = 0;
+            vfs_write(fp, buf, sizeof(buf), &pos);     
+        }
+        mic_state_switch();
+    } else if(cmd == MIC_STATE_WIRTE) {
+        if((*ch >= '0' && *ch <= '2') && (*ch != buf[0])) {
+            es8323_mic_state = *ch - '0';
+            buf[0] = *ch;
+            buf[1] = 0;
+            pos = 0;
+            vfs_write(fp, buf, sizeof(buf), &pos); 
+            mic_state_switch();
+            printk("es8323_mic_state_ctrl es8323_mic_state=%d write: %s \n", es8323_mic_state ,ch);
+        }   
+    } else if(cmd == MIC_STATE_READ) {
+        *ch = buf[0];
+    }
+    filp_close(fp, NULL);
+    set_fs(fs);
+    return 0;
+}
+
+
+static ssize_t mic_state_show(struct device *dev, struct device_attribute *attr, char *_buf)
+{
+	return sprintf(_buf, "%d\n", es8323_mic_state);
+}
+
+static ssize_t mic_state_store(struct device *dev,
+					struct device_attribute *attr,
+					const char *_buf, size_t _count)
+{
+	const char * p=_buf;
+	u32 reg, val;
+	printk("write: %s\n", &_buf[0]);
+	if(_buf[0] >= '0' && _buf[0] <= '2') {
+	    es8323_mic_state_ctrl(MIC_STATE_WIRTE, &_buf[0]);
+	}
+	
+	return _count;
+} 
+
+static struct device *es8323_mic_state_dev = NULL;
+static DEVICE_ATTR(mic_state, 0666,mic_state_show, mic_state_store);
+
+
+struct delayed_work  mic_state_work;
+struct workqueue_struct *mic_state_wq;
+static void mic_state_fuc(struct work_struct *pwork) //(unsigned long _data)
+{
+    es8323_mic_state_ctrl(MIC_STATE_INIT, NULL);         
+}
+
+
 /*
 dts:
 	codec@10 {
@@ -1325,6 +1438,11 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 		DBG("%s() Can not read property codec-en-gpio\n", __FUNCTION__);
 		es8323_hp_det_gpio = INVALID_GPIO;
 	}
+	
+	of_property_read_u32(i2c->dev.of_node, "hp-mic-only", &es8323_hp_mic_only);
+	if(es8323_hp_mic_only != 1) {
+	   es8323_hp_mic_only = 0;
+	}
 
 	reg = ES8323_DACCONTROL18;
 	ret = i2c_master_recv(i2c, &reg, 1);
@@ -1353,6 +1471,19 @@ static int es8323_i2c_probe(struct i2c_client *i2c,
 	ret = device_create_file(es8323_dev, &dev_attr_es8323);
         if (ret < 0)
                 printk("failed to add dev_attr_es8323 file\n");
+  
+    if(es8323_hp_mic_only == 1) {
+        es8323_mic_state_dev = device_create(es8323_class, NULL, MKDEV(0, 1), NULL, "mic_state");
+        ret = device_create_file(es8323_mic_state_dev, &dev_attr_mic_state);
+            if (ret < 0)
+                    printk("failed to add dev_attr_mic_state file\n");  
+        INIT_DELAYED_WORK(&mic_state_work, mic_state_fuc); 
+        mic_state_wq = create_workqueue("firefly_mic_state_wq"); 
+        if (mic_state_wq){
+            queue_delayed_work(mic_state_wq, &mic_state_work,msecs_to_jiffies(8000));
+        }
+    }      
+                
   #ifdef CONFIG_MACH_RK_FAC              
   	es8323_hdmi_ctrl=1;
   #endif 
