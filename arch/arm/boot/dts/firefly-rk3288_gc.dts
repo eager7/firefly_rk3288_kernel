@@ -121,10 +121,33 @@
 		};
 	};
 
+	rockchip-es8323 {
+		compatible = "rockchip-es8323";
+		dais {
+			dai0 {
+				audio-codec = <&es8323>;
+				i2s-controller = <&i2s>;
+				format = "i2s";
+				//continuous-clock;
+				//bitclock-inversion;
+				//frame-inversion;
+				//bitclock-master;
+				//frame-master;
+			};
+		};
+	};
 	rkxx-remotectl{
 		compatible = "rockchip,remotectl";
-		module-gpios = <&gpio0 GPIO_A6 GPIO_ACTIVE_LOW>;
-		status = "disabled";
+                module-gpios = <&gpio7 GPIO_A5 GPIO_ACTIVE_LOW>;
+        led-power = <&gpio8 GPIO_A1 GPIO_ACTIVE_LOW>;
+		status = "okay";
+	};
+	
+	firefly-led{
+		compatible = "firefly,led";
+		led-work = <&gpio8 GPIO_A2 GPIO_ACTIVE_LOW>;
+		led-power = <&gpio8 GPIO_A1 GPIO_ACTIVE_LOW>;
+		status = "okay";
 	};
 
 	usb_control {
@@ -410,7 +433,7 @@
 	rtc@51 {
 		compatible = "rtc,hym8563";
 		reg = <0x51>;
-		irq_gpio = <&gpio0 GPIO_A4 IRQ_TYPE_EDGE_FALLING>;
+		irq_gpio = <&gpio7 GPIO_A4 IRQ_TYPE_EDGE_FALLING>;
 	};
 };
 
@@ -424,6 +447,13 @@
 
 &i2c2 {
 	status = "okay";
+	es8323: es8323@10 {
+	    compatible = "es8323";
+		reg = <0x10>;
+		spk-con-gpio = <&gpio0 GPIO_B2 GPIO_ACTIVE_HIGH>;
+		hp-det-gpio = <&gpio7 GPIO_B7 GPIO_ACTIVE_HIGH>;
+		hp-mic-only = <1>;
+	};
 };
 
 &i2c3 {
@@ -454,6 +484,15 @@
 		spk_ctl_io = <&gpio7 GPIO_A5 1>;
 		boot_depop = <1>;
 		pa_enable_time = <1000>;
+	};
+	vga_ddc@50 {
+		compatible = "firefly,vga_ddc";
+		reg = <0x50>;
+		gpio-pwn = <&gpio0 GPIO_C1 GPIO_ACTIVE_HIGH>;
+		gpio-sel = <&gpio0 GPIO_C2 GPIO_ACTIVE_HIGH>;
+		rockchip,source = <0>; //0: LCDC0; 1: LCDC1
+		rockchip,prop = <PRMRY>;//<EXTEND>
+		status = "okay";
 	};
 };
 
@@ -492,13 +531,13 @@
 };
 
 &adc {
-	status = "disabled";
+	status = "okay";
 
 	key {
 		compatible = "rockchip,key";
-		/*
-		io-channels = <&adc 1>;
 		
+		io-channels = <&adc 1>;
+		/*
 		vol-up-key {
 			linux,code = <115>;
 			label = "volume up";
@@ -618,7 +657,9 @@
 };
 /include/ "act8846.dtsi"
 &act8846 {
-	gpios =<&gpio7 GPIO_A1 GPIO_ACTIVE_LOW>,<&gpio0 GPIO_B2 GPIO_ACTIVE_HIGH>;
+	gpios =<&gpio7 GPIO_A1 GPIO_ACTIVE_LOW>,<&gpio0 GPIO_A1 GPIO_ACTIVE_HIGH>;
+	cpu_det_gpio =<&gpio7 GPIO_B2 GPIO_ACTIVE_LOW>;
+	usb_hub_reset_gpio =<&gpio8 GPIO_A3 GPIO_ACTIVE_LOW>;
 	act8846,system-power-controller;
 
 	regulators {
