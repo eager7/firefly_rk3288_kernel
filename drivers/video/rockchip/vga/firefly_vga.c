@@ -420,7 +420,7 @@ static void vga_work_queue(struct work_struct *work)
                 if(vga_ddc_is_ok() == 0) {
                     ddev->ddc_check_ok = 0;
 	                #ifdef CONFIG_SWITCH
-	                //switch_set_state(&(ddev->switchdev), 0);
+	                switch_set_state(&(ddev->switchdev), 0);
 	                #endif
                     printk("VGA Devie disconnect\n");
                 } 
@@ -619,7 +619,7 @@ static void __exit vga_edid_exit(void)
 }
 
 
-module_init(vga_edid_init);
+late_initcall(vga_edid_init);
 module_exit(vga_edid_exit);
 
 MODULE_AUTHOR("teefirefly@gmail.com");
