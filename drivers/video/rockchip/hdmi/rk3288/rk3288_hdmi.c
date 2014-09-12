@@ -263,7 +263,7 @@ static struct notifier_block rk3288_hdmi_fb_notifier = {
 
 static void rk3288_hdmi_irq_work_func(struct work_struct *work)
 {
-	if (hdmi_dev->enable) {
+	/*if (hdmi_dev->enable)*/ {
 		hdmi_dev_irq(0, hdmi_dev);
 		queue_delayed_work(hdmi_dev->workqueue, &(hdmi_dev->delay_work), msecs_to_jiffies(50));
 	}

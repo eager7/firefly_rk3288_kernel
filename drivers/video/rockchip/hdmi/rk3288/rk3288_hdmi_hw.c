@@ -1383,6 +1383,9 @@ irqreturn_t hdmi_dev_irq(int irq, void *priv)
 {
 	struct hdmi_dev *hdmi_dev = priv;
 	struct hdmi *hdmi = hdmi_dev->hdmi;
+        if (hdmi->sleep)
+                return IRQ_HANDLED;
+
 	char phy_pol = hdmi_readl(hdmi_dev, PHY_POL0);
 	char phy_status = hdmi_readl(hdmi_dev, PHY_STAT0);
 	char phy_int0 = hdmi_readl(hdmi_dev, PHY_INI0);
