@@ -57,3 +57,7 @@ obj-y += inv_mpu/
 obj-$(CONFIG_SRAM)		+= sram.o
 
 obj-$(CONFIG_5V_EN)	+= 5v_en.o
+
+ifeq ($(CONFIG_ENCRYPTION_DEVICE),)
+obj-y += atx8_unsetup.o
+endif
