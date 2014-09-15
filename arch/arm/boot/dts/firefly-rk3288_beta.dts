@@ -453,6 +453,10 @@
 		spk-con-gpio = <&gpio0 GPIO_B2 GPIO_ACTIVE_HIGH>;
 		hp-det-gpio = <&gpio7 GPIO_B7 GPIO_ACTIVE_HIGH>;
 		hp-mic-only = <1>;
+		clocks = <&clk_i2s>, <&clk_i2s_out>;
+		clock-names = "i2s_clk","i2s_mclk";
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2s_mclk>;
 	};
 };
 
