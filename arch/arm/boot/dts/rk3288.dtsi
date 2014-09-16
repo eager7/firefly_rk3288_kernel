@@ -875,6 +875,7 @@
 
 	pwm0: pwm@ff680000 {
 		compatible = "rockchip,rk-pwm0";
+		led-power = <&gpio8 GPIO_A1 GPIO_ACTIVE_LOW>;
 		reg = <0xff680000 0x10>;
 		#pwm-cells = <2>;
 		pinctrl-names = "default";

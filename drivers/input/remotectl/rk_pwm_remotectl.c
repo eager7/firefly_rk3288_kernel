@@ -27,7 +27,12 @@
 #include <linux/iio/consumer.h>
 
 #include "rk_pwm_remotectl.h"
-
+#include <asm/gpio.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_gpio.h>
+#include <linux/of_platform.h>
+#include <linux/rk_fb.h>
 
 // sys/module/rk_pwm_remotectl/parameters,modify code_print to change the value
 static int rk_remote_print_code = 0;
@@ -47,6 +52,27 @@ module_param_named(dbg_level, rk_remote_pwm_dbg_level, int, 0644);
 			pr_info(args); \
 		} \
 	} while (0)
+
+
+#ifdef CONFIG_FIREFLY_POWER_LED
+
+struct timer_list timer_led;
+int led_gpio;
+int led_enable_value;
+static int remotectl_led_ctrl(int state)
+{
+    if(state) {
+        gpio_direction_output(led_gpio, led_enable_value);
+    } else {
+        gpio_direction_output(led_gpio, !(led_enable_value));
+    }
+}
+
+static void led_timer(unsigned long _data)
+{
+    remotectl_led_ctrl(1);
+}
+#endif
 
 
 struct rkxx_remote_key_table{
@@ -161,9 +187,37 @@ static struct rkxx_remote_key_table remote_key_table_sunchip_ff00[] = {
     {0xbe, KEY_SEARCH},     // search
 };
 
+#define R66_REMOTE
+#ifdef R66_REMOTE
+static struct rkxx_remote_key_table remote_key_table_r66[12] = {
+	{0xeb, KEY_POWER},        // Power
+	// Control
+    {0xa3, 250},              // Settings
+    {0xec, KEY_MENU},         // Menu
+    {0xfc, KEY_UP},           // Up
+    {0xfd, KEY_DOWN},         // Down
+    {0xf1, KEY_LEFT},         // Left
+   {0xe5, KEY_RIGHT},        // Right
+    {0xf8, KEY_REPLY},        // Ok
+    {0xb7, KEY_HOME},         // Home
+    {0xfe, KEY_BACK},         // Back
+    // vol
+    {0xa7, KEY_VOLUMEDOWN},   // Vol-
+    {0xf4, KEY_VOLUMEUP},     // Vol+
+};
+#endif
+ 
 
 static struct rkxx_remotectl_button remotectl_button[] = 
 {
+#ifdef R66_REMOTE
+    {
+       .usercode = 0xff00,
+       .nbuttons =  12,
+       .key_table = &remote_key_table_r66[0],
+    },
+#endif
+#if 0
     {  
        .usercode = 0xff00,
        .nbuttons =  29, 
@@ -174,6 +228,7 @@ static struct rkxx_remotectl_button remotectl_button[] =
        .nbuttons =  22, 
        .key_table = &remote_key_table_meiyu_4040[0],
     },
+#endif
 };
 
 
@@ -256,7 +311,10 @@ static void rk_pwm_remotectl_do_something(unsigned long  data)
         {
             //ddata->count ++;
             //ddata->scanData <<= 1;
-            
+            #ifdef CONFIG_FIREFLY_POWER_LED
+            mod_timer(&timer_led,jiffies + msecs_to_jiffies(50));
+            remotectl_led_ctrl(0);    
+            #endif            
             if ((RK_PWM_TIME_BIT1_MIN < ddata->period) && (ddata->period < RK_PWM_TIME_BIT1_MAX)){
                 ddata->scanData |= (0x01<<ddata->count);
             }   
@@ -382,6 +440,7 @@ static int rk_pwm_probe(struct platform_device *pdev)
 {
     //struct device_node *np = pdev->dev.of_node;
     //struct device *dev = &pdev->dev;
+    struct device_node *node = pdev->dev.of_node;
     struct rkxx_remotectl_drvdata *ddata;
     struct resource *r;
     struct input_dev *input;
@@ -390,6 +449,7 @@ static int rk_pwm_probe(struct platform_device *pdev)
     int ret;
     //int val;
     int i,j;
+    int gpio,flag;
     
     printk(".. rk pwm remotectl v1.0 init\n");
     
@@ -474,6 +534,24 @@ static int rk_pwm_probe(struct platform_device *pdev)
         pr_err("rk pwm remotectl: Unable to register input device, ret: %d\n", ret);
     }
     
+#ifdef CONFIG_FIREFLY_POWER_LED
+	gpio = of_get_named_gpio_flags(node,"led-power", 0,&flag);
+	if (!gpio_is_valid(gpio)){
+		printk("invalid led-power: %d\n",gpio);
+		//goto fail2;
+	} 
+    ret = gpio_request(gpio, "led_power");
+	if (ret != 0) {
+		gpio_free(gpio);
+		ret = -EIO;
+		//goto fail2;
+	}
+	led_gpio = gpio;
+	led_enable_value = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
+	gpio_direction_output(led_gpio, led_enable_value);
+	setup_timer(&timer_led, led_timer, (unsigned long)ddata);
+#endif 
+
     input_set_capability(input, EV_KEY, KEY_WAKEUP);
     
     device_init_wakeup(&pdev->dev, 1);
