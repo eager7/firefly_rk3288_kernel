@@ -1,6 +1,12 @@
-config  FIREFLY_VGA
+
+menuconfig FIREFLY_VGA
         bool "Firefly VGA Out/In support"
         help
-           Support Firefly VGA in if you say y here
+          Support Firefly VGA in if you say y here
 
+config FIREFLY_VGA_OUT_ONLY
+	tristate "Firefly VGA Out Only"
+	depends on FIREFLY_VGA
+	help
+	  Support Firefly VGA Only Out in if you say y here
 

@@ -14,7 +14,7 @@
 #define DDC_I2C_RATE		100*1000
 #define EDID_LENGTH 128
 
-#define DEFAULT_MODE       4 
+#define DEFAULT_MODE      10
 
 extern const struct fb_videomode sda7123_vga_mode[];
 extern int get_vga_mode_len();
@@ -97,6 +97,7 @@ int vga_ddc_is_ok(void)
     int rc = -1;
 	char buf[8];
 	if (ddev != NULL) {
+	    
 		rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, 8);
 		if(rc == 8) {
 			if (buf[0] == 0x00 && buf[1] == 0xff && buf[2] == 0xff && buf[3] == 0xff &&
@@ -112,7 +113,6 @@ int vga_ddc_is_ok(void)
 	}else {
 		//printk("vga-ddc:  unknown error\n");
 	}
-		
 	return 0;
 }
 
@@ -208,6 +208,23 @@ static void vga_set_modelist(void)
 	ddev->modelen = modelen;
 }
 
+static void vga_set_default_modelist(void)
+{
+	int i, j = 0, modelen = 0;
+	struct fb_videomode *mode = NULL;
+	struct list_head	*modelist  = &ddev->modelist;
+	struct fb_monspecs	*specs = &ddev->specs;
+	int pixclock;
+
+	fb_destroy_modelist(modelist);
+    modelen = get_vga_mode_len();
+	for(i = 0; i < modelen; i++) {
+		fb_add_videomode(&default_modedb[i], modelist);
+	}
+	
+	ddev->modelen = modelen;
+}
+
 struct fb_videomode *vga_find_max_mode(void)
 {
 	struct fb_videomode *mode = NULL/*, *nearest_mode = NULL*/;
@@ -263,6 +280,7 @@ static struct fb_videomode *vga_find_best_mode(void)
 			 best = (struct fb_videomode *)fb_find_nearest_mode(mode, &ddev->modelist);
 		}
 	} else {
+	    vga_set_default_modelist();
 		printk("vga-ddc: read and parse edid failed errno:%d.\n", res);
 	}
 	
@@ -340,7 +358,22 @@ static struct notifier_block firefly_fb_notifier = {
         .notifier_call = firefly_fb_event_notify,
 };
 
-
+void vga_out_power(int enable) 
+{
+#ifdef CONFIG_FIREFLY_VGA_OUT_ONLY  	
+   if(enable) {
+        gpio_set_value(ddev->gpio_pwn,ddev->gpio_pwn_enable);
+   } else {
+        gpio_set_value(ddev->gpio_pwn, !(ddev->gpio_pwn_enable));
+   }
+#else
+   if(enable) {
+        gpio_set_value(ddev->gpio_sel,ddev->gpio_sel_enable);
+   } else {
+        gpio_set_value(ddev->gpio_sel, !(ddev->gpio_sel_enable));
+   }
+#endif
+}
 
 void vga_switch_source(int source) 
 {
@@ -403,7 +436,7 @@ static void vga_work_queue(struct work_struct *work)
 			}
 			break;
 		case VGA_TIMER_CHECK:
-            if(vga_ddc_is_ok()) {
+            if( vga->enable && vga_ddc_is_ok()) {
                 if(ddev->ddc_check_ok == 0 && ddev->ddc_timer_start == 1) {
                     modeNum = vga_switch_default_screen();
                     ddev->ddc_check_ok = 1;
@@ -417,14 +450,16 @@ static void vga_work_queue(struct work_struct *work)
 	                #endif
                 }
             } else if(ddev->ddc_check_ok == 1) {
-                if(vga_ddc_is_ok() == 0) {
+                if(vga_ddc_is_ok() == 0 || vga->enable != 1) {
                     ddev->ddc_check_ok = 0;
 	                #ifdef CONFIG_SWITCH
 	                switch_set_state(&(ddev->switchdev), 0);
 	                #endif
+	                vga_set_default_modelist();
                     printk("VGA Devie disconnect\n");
                 } 
             }
+            
             
             if(ddev->ddc_timer_start == 1) {
               vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
@@ -507,8 +542,11 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	}
 	ddev->gpio_pwn = gpio;
 	ddev->gpio_pwn_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
-	gpio_direction_output(ddev->gpio_pwn, ddev->gpio_pwn_enable);
-	
+#ifdef CONFIG_FIREFLY_VGA_OUT_ONLY
+	gpio_direction_output(ddev->gpio_pwn, !(ddev->gpio_pwn_enable));
+#else	
+    gpio_direction_output(ddev->gpio_pwn, ddev->gpio_pwn_enable);
+    
 	gpio = of_get_named_gpio_flags(vga_node,"gpio-sel", 0,&flag);
 	if (!gpio_is_valid(gpio)){
 		printk("invalid gpio-sel: %d\n",gpio);
@@ -523,7 +561,8 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	ddev->gpio_sel = gpio;
 	ddev->gpio_sel_enable = (flag == OF_GPIO_ACTIVE_LOW)? 0:1;
 	gpio_direction_output(ddev->gpio_sel, ddev->gpio_sel_enable);
-	
+#endif
+
 	of_property_read_u32(vga_node, "rockchip,source", &(rc));
 	ddev->video_source = rc;
 	of_property_read_u32(vga_node, "rockchip,prop", &(rc));
@@ -531,8 +570,10 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	
     ddev->modeNum = vga_switch_default_screen();
     
+#ifndef CONFIG_FIREFLY_VGA_OUT_ONLY    
     vga_switch_source(VGA_SOURCE_EXTERN); 
-    
+#endif    
+
     printk("%s: success. %d \n", __func__,ddev->modeNum);
     
 

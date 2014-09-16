@@ -83,8 +83,9 @@ int firefly_switch_fb(const struct fb_videomode *modedb, int tv_mode)
 	rk_fb_switch_screen(screen, 1 , ddev->video_source);
 	
 	ddev->modeNum = tv_mode;
-	
-	gpio_set_value(ddev->gpio_sel,ddev->gpio_sel_enable);
+
+    vga_out_power(1);
+
 	
 	kfree(screen);
 	
@@ -98,7 +99,7 @@ int firefly_vga_standby(void)
 	
 	//vga_monspecs.enable = 0;
 	
-	gpio_set_value(ddev->gpio_sel, !(ddev->gpio_sel_enable));
+	vga_out_power(0);
 	
 	screen.type = SCREEN_RGB;
 	
@@ -156,7 +157,7 @@ static int firefly_vga_get_status(struct rk_display_device *device)
 
 static int firefly_vga_get_modelist(struct rk_display_device *device, struct list_head **modelist)
 {
-    printk("%s %d\n",__FUNCTION__,__LINE__);
+   // printk("%s %d\n",__FUNCTION__,__LINE__);
 	mutex_lock(&vga_monspecs.lock);
 	*modelist = &(ddev->modelist);
 	mutex_unlock(&vga_monspecs.lock);
@@ -193,7 +194,7 @@ int firefly_vga_set_mode(struct rk_display_device *device, struct fb_videomode *
 
 static int firefly_vga_get_mode(struct rk_display_device *device, struct fb_videomode *mode)
 {
-    printk("%s %d\n",__FUNCTION__,__LINE__);
+    //printk("%s %d\n",__FUNCTION__,__LINE__);
 	if(mode == NULL)
 	    return -1;
 	*mode = *(vga_monspecs.mode);
