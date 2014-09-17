@@ -129,9 +129,8 @@ static void hp_detect_do_switch(struct work_struct *work)
 		pr_err("%s: irq_set_irq_type(%d, %d) failed\n", __func__, irq, type);
 	}
 
-	hp_irq_flag = 1;
-
     if(es8323_hp_mic_only == 0) {
+        hp_irq_flag = 1;
 	    if(es8323_hp_det_action_value == gpio_get_value(es8323_hp_det_gpio)){
 		    printk("hp_det = 0,insert hp\n");
 		    gpio_set_value(es8323_spk_con_gpio,0);
