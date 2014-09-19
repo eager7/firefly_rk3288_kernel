@@ -295,7 +295,7 @@ static void rk_pwm_remotectl_do_something(unsigned long  data)
             }
             ddata->count ++;
             if (ddata->count == 0x10){//16 bit user code
-                DBG_CODE("GET USERCODE=0x%x\n",((ddata->scanData) && 0xffff));
+                DBG_CODE("GET USERCODE=0x%x\n",((ddata->scanData) & 0xffff));
                 if (remotectl_keybdNum_lookup(ddata)){
                     ddata->state = RMC_GETDATA;
                     ddata->scanData = 0;
@@ -445,6 +445,8 @@ static int rk_pwm_probe(struct platform_device *pdev)
     struct resource *r;
     struct input_dev *input;
     struct clk *clk;
+    struct cpumask cpumask;
+    int cpu;
     int irq;
     int ret;
     //int val;
@@ -560,6 +562,10 @@ static int rk_pwm_probe(struct platform_device *pdev)
     // rk_pwm_remotectl_proc_init();
     #endif
     
+    	cpu = 2;
+    	cpumask_clear(&cpumask);
+	cpumask_set_cpu(cpu, &cpumask); 
+	irq_set_affinity(irq, &cpumask); 
     rk_pwm_remotectl_hw_init(ddata);
     DBG("%s end \n",__FUNCTION__);
     
@@ -574,28 +580,28 @@ static int rk_pwm_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM
 static int remotectl_suspend(struct device *dev)
 {
+	int cpu = 0;
+	struct cpumask cpumask;
 	struct platform_device *pdev = to_platform_device(dev);
     struct rkxx_remotectl_drvdata *ddata = platform_get_drvdata(pdev);
 
-	if (device_may_wakeup(&pdev->dev)) {
-		if (ddata->wakeup) {
-            ;//enable_irq_wake(ddata->irq);
-		}
-	}
+	cpumask_clear(&cpumask);
+	cpumask_set_cpu(cpu, &cpumask); 
+	irq_set_affinity(ddata->irq, &cpumask); 
 	return 0;
 }
 
 
 static int remotectl_resume(struct device *dev)
 {
+	int cpu = 2;
+	struct cpumask cpumask;
     struct platform_device *pdev = to_platform_device(dev);
     struct rkxx_remotectl_drvdata *ddata = platform_get_drvdata(pdev);
 
-    if (device_may_wakeup(&pdev->dev)) {
-        if (ddata->wakeup) {
-    	    ;//disable_irq_wake(ddata->irq);
-        }
-    }
+	cpumask_clear(&cpumask);
+	cpumask_set_cpu(cpu, &cpumask); 
+	irq_set_affinity(ddata->irq, &cpumask); 
    
     return 0;
 }
