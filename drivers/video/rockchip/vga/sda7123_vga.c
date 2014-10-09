@@ -4,6 +4,15 @@
 #include <linux/fb.h>
 #include <linux/rk_fb.h>
 #include <linux/display-sys.h>
+#include <linux/module.h>
+#include <linux/i2c.h>
+#include <linux/bcd.h>
+#include <linux/rtc.h>
+#include <linux/delay.h>
+#include <linux/wakelock.h>
+#include <linux/slab.h>
+#include <linux/of_gpio.h>
+#include <linux/irqdomain.h>
 
 
 const struct fb_videomode sda7123_vga_mode[] = {
@@ -106,6 +115,12 @@ int firefly_vga_standby(void)
 	rk_fb_switch_screen(&screen, 0 , ddev->video_source);
 	
 	ddev->ddc_timer_start = 0;
+	ddev->ddc_check_ok = 0;
+    #ifdef CONFIG_SWITCH
+    if (ddev->switchdev.state){
+        switch_set_state(&(ddev->switchdev), 0);
+    }
+    #endif
 
 	return 0;
 }
@@ -115,10 +130,14 @@ int firefly_vga_enable(void)
     printk("%s %d start\n",__FUNCTION__,__LINE__);
     vga_monspecs.enable = 1;
     firefly_switch_fb(vga_monspecs.mode, vga_monspecs.mode_set);
+    
+    ddev->ddc_timer_start = 1;
     if(ddev->first_start == 1 || ddev->set_mode == 0){
         vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
     }
-    ddev->ddc_timer_start = 1;
+    #ifdef CONFIG_SWITCH
+    switch_set_state(&(ddev->switchdev), 1);
+    #endif
     //printk("%s %d exit\n",__FUNCTION__,__LINE__);
 }
 

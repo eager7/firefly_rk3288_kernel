@@ -445,15 +445,14 @@ static void vga_work_queue(struct work_struct *work)
                     firefly_vga_set_mode(NULL, &default_modedb[modeNum - 1]);
                     firefly_vga_enable();
                     ddev->set_mode = 0;
-	                #ifdef CONFIG_SWITCH
-	                switch_set_state(&(ddev->switchdev), 1);
-	                #endif
                 }
             } else if(ddev->ddc_check_ok == 1) {
                 if(vga_ddc_is_ok() == 0 || vga->enable != 1) {
                     ddev->ddc_check_ok = 0;
 	                #ifdef CONFIG_SWITCH
-	                switch_set_state(&(ddev->switchdev), 0);
+	                if (ddev->switchdev.state) {
+	                    switch_set_state(&(ddev->switchdev), 0);
+	                }
 	                #endif
 	                vga_set_default_modelist();
                     printk("VGA Devie disconnect\n");
