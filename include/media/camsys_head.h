@@ -43,9 +43,9 @@
 #define CAMSYS_DEVID_EXTERNAL         0xFF000000
 #define CAMSYS_DEVID_EXTERNAL_NUM     8
 
-#define CAMSYS_DEVCFG_FLASHLIGHT          0x00000001
-#define CAMSYS_DEVCFG_PREFLASHLIGHT       0x00000002
-#define CAMSYS_DEVCFG_SHUTTER             0x00000004
+#define CAMSYS_DEVCFG_FLASHLIGHT      0x00000001
+#define CAMSYS_DEVCFG_PREFLASHLIGHT   0x00000002
+#define CAMSYS_DEVCFG_SHUTTER         0x00000004
 
 typedef struct camsys_irqsta_s {
     unsigned int ris;                 //Raw interrupt status

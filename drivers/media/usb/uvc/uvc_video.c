@@ -361,6 +361,14 @@ static int uvc_commit_video(struct uvc_streaming *stream,
  * Clocks and timestamps
  */
 
+static inline void uvc_video_get_ts(struct timespec *ts)
+{
+	if (uvc_clock_param == CLOCK_MONOTONIC)
+		ktime_get_ts(ts);
+	else
+		ktime_get_real_ts(ts);
+}
+
 static void
 uvc_video_clock_decode(struct uvc_streaming *stream, struct uvc_buffer *buf,
 		       const __u8 *data, int len)
@@ -420,7 +428,7 @@ uvc_video_clock_decode(struct uvc_streaming *stream, struct uvc_buffer *buf,
 	stream->clock.last_sof = dev_sof;
 
 	host_sof = usb_get_current_frame_number(stream->dev->udev);
-	ktime_get_ts(&ts);
+	uvc_video_get_ts(&ts);
 
 	/* The UVC specification allows device implementations that can't obtain
 	 * the USB frame number to keep their own frame counters as long as they
@@ -1010,10 +1018,7 @@ static int uvc_video_decode_start(struct uvc_streaming *stream,
 			return -ENODATA;
 		}
 
-		if (uvc_clock_param == CLOCK_MONOTONIC)
-			ktime_get_ts(&ts);
-		else
-			ktime_get_real_ts(&ts);
+		uvc_video_get_ts(&ts);
 
 		buf->buf.v4l2_buf.sequence = stream->sequence;
 		buf->buf.v4l2_buf.timestamp.tv_sec = ts.tv_sec;
@@ -1292,14 +1297,18 @@ static void uvc_video_encode_bulk(struct urb *urb, struct uvc_streaming *stream,
 
 	urb->transfer_buffer_length = stream->urb_size - len;
 }
-
-static void uvc_video_complete(struct urb *urb)
-{
+/* ddl@rock-chips.com : uvc_video_complete is run in_interrupt(), so uvc decode operation delay run in tasklet for
+*    usb host reenable interrupt soon
+*/
+static void uvc_video_complete_fun (struct urb *urb)
+{    
 	struct uvc_streaming *stream = urb->context;
 	struct uvc_video_queue *queue = &stream->queue;
 	struct uvc_buffer *buf = NULL;
 	unsigned long flags;
 	int ret;
+	int i;
+	atomic_t *urb_state=NULL;
 
 	switch (urb->status) {
 	case 0:
@@ -1319,6 +1328,25 @@ static void uvc_video_complete(struct urb *urb)
 		return;
 	}
 
+	for (i = 0; i < UVC_URBS; ++i) {    
+		if (stream->urb[i] == urb) {
+			urb_state = &stream->urb_state[i];
+			break;
+		}
+	}
+
+	if (urb_state == NULL) {
+		printk("urb(%p) cann't be finded in stream->urb(%p, %p, %p, %p, %p)\n",
+			urb,stream->urb[0],stream->urb[1],stream->urb[2],stream->urb[3],stream->urb[4]);
+		BUG();
+	}
+
+	if (atomic_read(urb_state)==UrbDeactive) {
+		printk(KERN_DEBUG "urb is deactive, this urb complete cancel!");
+		uvc_queue_cancel(queue, urb->status == -ESHUTDOWN);
+		return;
+	}
+
 	spin_lock_irqsave(&queue->irqlock, flags);
 	if (!list_empty(&queue->irqqueue))
 		buf = list_first_entry(&queue->irqqueue, struct uvc_buffer,
@@ -1330,6 +1358,35 @@ static void uvc_video_complete(struct urb *urb)
 	if ((ret = usb_submit_urb(urb, GFP_ATOMIC)) < 0) {
 		uvc_printk(KERN_ERR, "Failed to resubmit video URB (%d).\n",
 			ret);
+	}
+}
+static void uvc_video_complete_tasklet(unsigned long data)
+{
+	struct urb *urb = (struct urb*)data;   
+
+	uvc_video_complete_fun(urb);    
+
+	return;
+}
+static void uvc_video_complete(struct urb *urb)
+{
+	int i;
+	struct uvc_streaming *stream = urb->context;
+	struct tasklet_struct *tasklet = NULL;
+	atomic_t *urb_state;
+
+	for (i = 0; i < UVC_URBS; ++i) {    
+		if (stream->urb[i] == urb) {
+			tasklet = stream->tasklet[i];
+			urb_state = &stream->urb_state[i];
+			break;
+		}
+	}
+
+	if ((tasklet != NULL)&&(atomic_read(urb_state)==UrbActive)) {
+		tasklet_schedule(tasklet);
+	} else {
+		uvc_video_complete_fun(urb);
 	}
 }
 
@@ -1428,6 +1485,14 @@ static void uvc_uninit_video(struct uvc_streaming *stream, int free_buffers)
 		urb = stream->urb[i];
 		if (urb == NULL)
 			continue;
+		else
+			atomic_set(&stream->urb_state[i],UrbDeactive);
+
+		if (stream->tasklet[i]) {
+			tasklet_kill(stream->tasklet[i]);
+			kfree(stream->tasklet[i]);
+			stream->tasklet[i] = NULL;
+		}
 
 		usb_kill_urb(urb);
 		usb_free_urb(urb);
@@ -1508,6 +1573,15 @@ static int uvc_init_video_isoc(struct uvc_streaming *stream,
 		}
 
 		stream->urb[i] = urb;
+		/* ddl@rock-chips.com  */
+		atomic_set(&stream->urb_state[i],UrbActive);
+		stream->tasklet[i] = kmalloc(sizeof(struct tasklet_struct), GFP_KERNEL);
+		if (stream->tasklet[i] == NULL) {
+			uvc_printk(KERN_ERR, "device %s requested tasklet memory fail!\n",
+				stream->dev->name);
+		} else {
+			tasklet_init(stream->tasklet[i], uvc_video_complete_tasklet, (unsigned long)urb);
+		}
 	}
 
 	return 0;
@@ -1561,6 +1635,15 @@ static int uvc_init_video_bulk(struct uvc_streaming *stream,
 #endif
 
 		stream->urb[i] = urb;
+
+		/* ddl@rock-chips.com  */
+		stream->tasklet[i] = kmalloc(sizeof(struct tasklet_struct), GFP_KERNEL);
+		if (stream->tasklet[i] == NULL) {
+			uvc_printk(KERN_ERR, "device %s requested tasklet memory fail!\n",
+				stream->dev->name);
+		} else {
+			tasklet_init(stream->tasklet[i], uvc_video_complete_tasklet, (unsigned long)urb);
+		}
 	}
 
 	return 0;
@@ -1846,7 +1929,25 @@ int uvc_video_enable(struct uvc_streaming *stream, int enable)
 
 	if (!enable) {
 		uvc_uninit_video(stream, 1);
-		usb_set_interface(stream->dev->udev, stream->intfnum, 0);
+		if (stream->intf->num_altsetting > 1) {
+			usb_set_interface(stream->dev->udev,
+					  stream->intfnum, 0);
+		} else {
+			/* UVC doesn't specify how to inform a bulk-based device
+			 * when the video stream is stopped. Windows sends a
+			 * CLEAR_FEATURE(HALT) request to the video streaming
+			 * bulk endpoint, mimic the same behaviour.
+			 */
+			unsigned int epnum = stream->header.bEndpointAddress
+					   & USB_ENDPOINT_NUMBER_MASK;
+			unsigned int dir = stream->header.bEndpointAddress
+					 & USB_ENDPOINT_DIR_MASK;
+			unsigned int pipe;
+
+			pipe = usb_sndbulkpipe(stream->dev->udev, epnum) | dir;
+			usb_clear_halt(stream->dev->udev, pipe);
+		}
+
 		uvc_queue_enable(&stream->queue, 0);
 		uvc_video_clock_cleanup(stream);
 		return 0;
