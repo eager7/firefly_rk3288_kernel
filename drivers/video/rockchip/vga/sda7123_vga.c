@@ -141,6 +141,19 @@ int firefly_vga_enable(void)
     //printk("%s %d exit\n",__FUNCTION__,__LINE__);
 }
 
+int firefly_vga_resume(int check_ddc)
+{
+    if(check_ddc) {
+        vga_monspecs.enable = 1;
+        ddev->ddc_timer_start = 1;
+        if(ddev->first_start == 1 || ddev->set_mode == 0){
+            vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
+        }
+    } else {
+        firefly_vga_enable();
+    }
+}
+
 int firefly_vga_set_enable(struct rk_display_device *device, int enable)
 {
     printk("%s %d enable:%d\n",__FUNCTION__,__LINE__,enable);

@@ -82,6 +82,7 @@ extern int firefly_vga_set_mode(struct rk_display_device *device, struct fb_vide
 extern int firefly_vga_set_enable(struct rk_display_device *device, int enable);
 //int firefly_register_display_vga(struct device *parent);
 extern int firefly_vga_enable(void);
+extern firefly_vga_resume(int check_ddc);
 extern int firefly_vga_standby(void);
 extern struct delayed_work *vga_submit_work(struct sda7123_monspecs *vga, int event, int delay, void *data);
 extern void vga_out_power(int enable) ;

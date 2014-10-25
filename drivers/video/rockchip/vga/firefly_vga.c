@@ -10,7 +10,7 @@
 #include <linux/irqdomain.h>
 #include <linux/rk_fb.h>
 #include "firefly_vga.h"
-
+#include <linux/regulator/consumer.h>
 #define DDC_I2C_RATE		100*1000
 #define EDID_LENGTH 128
 
@@ -420,7 +420,7 @@ static void vga_work_queue(struct work_struct *work)
 		            vga->suspend = 0;
 		            printk("VGA RESUME\n");
 		            //rk_display_device_enable(vga->ddev);
-		            firefly_vga_enable();
+		            firefly_vga_resume(vga_ddc_is_ok());
 	            }
 			}
 			break;
@@ -461,7 +461,7 @@ static void vga_work_queue(struct work_struct *work)
             
             
             if(ddev->ddc_timer_start == 1) {
-              vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 600, NULL);
+              vga_submit_work(ddev->vga, VGA_TIMER_CHECK, 800, NULL);
             }
 			break;
 		case VGA_TIMER_DELAY:
@@ -516,10 +516,60 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
     int ret = -1;
     int gpio, rc,flag;
     unsigned long data;
+    struct regulator * ldo;
     struct device_node *vga_node = client->dev.of_node;
     
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) 
 		return -ENODEV;
+
+    ldo = regulator_get(NULL, "act_ldo3");
+		if (ldo == NULL) {
+				pr_err("\n%s get ldo3 failed\n", __func__);
+		} else{
+				regulator_set_voltage(ldo, 1800000, 1800000);
+				ret = regulator_enable(ldo);
+				if(ret != 0){
+						pr_err("%s: faild to enable ldo3\n", __func__);
+				} else {
+						pr_info("%s: turn on ldo3 done.\n", __func__);
+				}
+	}
+    ldo = regulator_get(NULL, "act_ldo4");
+	if (ldo == NULL) {
+			pr_err("\n%s get ldo failed\n", __func__);
+		} else{
+			regulator_set_voltage(ldo, 3300000, 3300000);
+			ret = regulator_enable(ldo);
+			if(ret != 0){
+					pr_err("%s: faild to enable ldo4.\n", __func__);
+			} else {
+					pr_info("%s: turn on ldo done.\n", __func__);
+	        }
+	}
+	    ldo = regulator_get(NULL, "act_ldo2");
+	if (ldo == NULL) {
+		pr_err("\n%s get ldo2 failed\n", __func__);
+	} else{
+			regulator_set_voltage(ldo, 1000000, 1000000);
+			ret = regulator_enable(ldo);
+			if(ret != 0){
+					pr_err("%s: faild to enable ldo2\n", __func__);
+			} else {
+					pr_info("%s: turn on ldo2 done.\n", __func__);
+			}
+	}
+	ldo = regulator_get(NULL, "act_ldo8");
+	if (ldo == NULL) {
+			pr_err("\n%s get ldo8 failed\n", __func__);
+	} else{
+			regulator_set_voltage(ldo, 1800000, 1800000);
+			ret = regulator_enable(ldo);
+			if(ret != 0){
+				pr_err("%s: faild to enable ldo8.\n", __func__);
+			} else {
+				pr_info("%s: turn on ldo done.\n", __func__);
+			}
+	}
 
 	ddev = kzalloc(sizeof(struct vga_ddc_dev), GFP_KERNEL);
 	if (ddev == NULL) 
@@ -626,6 +676,159 @@ static int  vga_edid_remove(struct i2c_client *client)
 }
 
 
+
+#ifdef CONFIG_PM
+static int vga_control_suspend(struct device *dev)
+{
+	int ret;
+	struct regulator *ldo;
+    mutex_lock(&ddev->vga->lock);
+	ldo = regulator_get(NULL, "act_ldo3");
+	if (ldo == NULL) {
+		pr_err("%s get ldo3 failed\n", __func__);
+	} else {
+		if(regulator_is_enabled(ldo)) {
+			ret = regulator_disable(ldo);
+			if(ret != 0)
+				pr_err("%s: faild to disableldo3\n", __func__);
+			else
+				pr_info("turn off ldo3 done.\n");
+		} else 
+			pr_warn("is disabled before disable ldo3");
+		regulator_put(ldo);
+	}
+	ldo = regulator_get(NULL, "act_ldo4");
+	if (ldo == NULL)
+		pr_err("\n%s get ldo4 failed \n", __func__);
+	else {
+		if(regulator_is_enabled(ldo)) {
+			ret = regulator_disable(ldo);
+			if(ret != 0)
+				pr_err("%s: faild to disable ldo4.\n", __func__);
+			else
+				pr_info("turn off ldo4 done.\n");
+		} else
+			pr_warn("is disabled before disable ldo4");
+		regulator_put(ldo);
+	}
+	ldo = regulator_get(NULL, "act_ldo2");
+	if (ldo == NULL)
+		pr_err("\n%s get ldo2 failed \n", __func__);
+    else {
+		if(regulator_is_enabled(ldo)) {
+			ret = regulator_disable(ldo);
+			if(ret != 0)
+				pr_err("%s: faild to disable  ldo2.\n", __func__);
+			else
+				pr_info("turn off ldo2 done.\n");
+		}else	
+			pr_warn("is disabled before disable ldo2");
+	regulator_put(ldo);
+	}
+	ldo = regulator_get(NULL, "act_ldo8");
+	if (ldo == NULL)
+		pr_err("\n%s get ldo8 failed \n", __func__);
+	else {
+	if(regulator_is_enabled(ldo)) {
+			ret = regulator_disable(ldo);
+			if(ret != 0)
+				pr_err("%s: faild to disable  ldo8.\n", __func__);
+			else
+				pr_info("turn off ldo8 done.\n");
+		} else 
+			pr_warn("is disabled before disable ldo8");
+		regulator_put(ldo);
+	}
+	mutex_unlock(&ddev->vga->lock);
+	return 0;
+}
+
+static int vga_control_resume(struct device *dev)
+{
+	int ret;
+    struct regulator * ldo;
+    mutex_lock(&ddev->vga->lock);
+		ldo = regulator_get(NULL, "act_ldo3");
+		if (ldo == NULL) {
+				pr_err("\n%s get ldo3 failed\n", __func__);
+		} else{
+				if(!regulator_is_enabled(ldo)) {
+						regulator_set_voltage(ldo, 1800000, 1800000);
+						ret = regulator_enable(ldo);
+						if(ret != 0){
+								pr_err("%s: faild to enable ldo3\n", __func__);
+						} else {
+								pr_info("turn on ldo3 done.\n");
+						}
+				} else {
+						pr_warn("ldo3 is enabled before enable ");
+				}
+		}
+		ldo = regulator_get(NULL, "act_ldo4");
+		if (ldo == NULL) {
+				pr_err("\n%s get ldo failed\n", __func__);
+		} else{
+				if(!regulator_is_enabled(ldo)) {
+						regulator_set_voltage(ldo, 3300000, 3300000);
+						ret = regulator_enable(ldo);
+						if(ret != 0){
+								pr_err("%s: faild to enable ldo4.\n", __func__);
+						} else {
+								pr_info("turn on ldo done.\n");
+						}
+				} else {
+						pr_warn("ldo4 is enabled before enable\n");
+				}
+		}
+	   ldo = regulator_get(NULL, "act_ldo2");
+		if (ldo == NULL) {
+				pr_err("\n%s get ldo2 failed\n", __func__);
+		} else{
+				if(!regulator_is_enabled(ldo)) {
+						regulator_set_voltage(ldo, 1000000, 1000000);
+						ret = regulator_enable(ldo);
+						if(ret != 0){
+								pr_err("%s: faild to enable ldo2.\n", __func__);
+						} else {
+								pr_info("turn on ldo done.\n");
+						}
+				} else {
+						pr_warn("ldo2 is enabled before enable\n");
+				}
+		}
+		ldo = regulator_get(NULL, "act_ldo8");
+		if (ldo == NULL) {
+				pr_err("\n%s get ldo failed\n", __func__);
+		} else{
+				if(!regulator_is_enabled(ldo)) {
+						regulator_set_voltage(ldo, 1800000, 1800000);
+						ret = regulator_enable(ldo);
+						if(ret != 0){
+								pr_err("%s: faild to enable ldo8.\n", __func__);
+						} else {
+								pr_info("turn on ldo done.\n");
+						}
+				} else {
+						pr_warn("ldo8 is enabled before enable\n");
+				}
+		}
+	mutex_unlock(&ddev->vga->lock);
+return 0;
+}
+#endif
+
+
+
+
+
+static const struct dev_pm_ops firefly_vba_pm_ops = {
+    //SET_RUNTIME_PM_OPS(rockchip_i2s_suspend_noirq,
+    //                        rockchip_i2s_resume_noirq, NULL)
+    .suspend_late = vga_control_suspend,
+    .resume_early = vga_control_resume,
+};
+
+
 static const struct i2c_device_id vga_edid_id[] = {
 	{ "vga_edid", 0 },
 	{ }
@@ -642,6 +845,9 @@ struct i2c_driver vga_edid_driver = {
 		.name	= "vga_edid",
 		.owner	= THIS_MODULE,
 		.of_match_table = of_match_ptr(rtc_dt_ids),
+#ifdef CONFIG_PM		
+	    .pm	= &firefly_vba_pm_ops,
+#endif	
 	},
 	.probe		= vga_edid_probe,
 	.remove		= vga_edid_remove,
