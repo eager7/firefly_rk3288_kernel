@@ -61,4 +61,4 @@ obj-$(CONFIG_LEDS_DAC124S085)		+= leds-dac124s085.o
 obj-$(CONFIG_LEDS_TRIGGERS)		+= trigger/
 
 # LED Firefly
-obj-$(CONFIG_LEDS_FIREFLY)		+= leds-firefly.o
+#obj-$(CONFIG_LEDS_FIREFLY)		+= leds-firefly.o

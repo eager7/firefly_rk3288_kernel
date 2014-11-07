@@ -482,16 +482,16 @@ config LEDS_BLINKM
 comment "LED Triggers"
 source "drivers/leds/trigger/Kconfig"
 
-config LEDS_FIREFLY
-	tristate "LED Support for Firefly"
-	help
-	  LED Support for Firefly
+#config LEDS_FIREFLY
+#	tristate "LED Support for Firefly"
+#	help
+#	  LED Support for Firefly
 	  
-config FIREFLY_POWER_LED
-	tristate "Power LED Support for Firefly"
-	depends on LEDS_FIREFLY
-	help
-	  Power LED Support for Firefly
+#config FIREFLY_POWER_LED
+#	tristate "Power LED Support for Firefly"
+#	depends on LEDS_FIREFLY
+#	help
+#	  Power LED Support for Firefly
 	  
 
 endif # NEW_LEDS
