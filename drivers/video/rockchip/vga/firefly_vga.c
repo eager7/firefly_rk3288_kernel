@@ -10,8 +10,9 @@
 #include <linux/irqdomain.h>
 #include <linux/rk_fb.h>
 #include "firefly_vga.h"
+#include <linux/delay.h>
 #include <linux/regulator/consumer.h>
-#define DDC_I2C_RATE		100*1000
+#define DDC_I2C_RATE		50*1000
 #define EDID_LENGTH 128
 
 #define DEFAULT_MODE      10
@@ -94,23 +95,25 @@ static int vga_edid_i2c_set_regs(struct i2c_client *client, u8 reg, u8 const buf
 
 int vga_ddc_is_ok(void)
 {
-    int rc = -1;
+    int rc = -1, i;
 	char buf[8];
 	if (ddev != NULL) {
-	    
-		rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, 8);
-		if(rc == 8) {
-			if (buf[0] == 0x00 && buf[1] == 0xff && buf[2] == 0xff && buf[3] == 0xff &&
-					buf[4] == 0xff && buf[5] == 0xff && buf[6] == 0xff && buf[7] == 0x00) {
-				//printk("vga-ddc:  is ok\n");
-				return 1;
-			} else {
-			   //	printk("vga-ddc: io error");
-			}
-		}else {
-			//printk("vga-ddc: i2c  error\n");
-		}
-	}else {
+	    for(i = 0; i < 3; i++) {
+		    rc = vga_edid_i2c_read_regs(ddev->client, 0, buf, 8);
+		    if(rc == 8) {
+			    if (buf[0] == 0x00 && buf[1] == 0xff && buf[2] == 0xff && buf[3] == 0xff &&
+					    buf[4] == 0xff && buf[5] == 0xff && buf[6] == 0xff && buf[7] == 0x00) {
+				    //printk("vga-ddc:  is ok\n");
+				    return 1;
+			    } else {
+			       //	printk("vga-ddc: io error");
+			    }
+		    }else {
+			    //printk("vga-ddc: i2c  error\n");
+		    }
+		    mdelay(30);
+	    }
+	} else {
 		//printk("vga-ddc:  unknown error\n");
 	}
 	return 0;
@@ -269,10 +272,15 @@ struct fb_videomode *vga_find_max_mode(void)
 
 static struct fb_videomode *vga_find_best_mode(void)
 {
-	int res = -1;
+	int res = -1,i;
 	struct fb_videomode *mode = NULL, *best = NULL;
 
 	res = vga_parse_edid();
+    for(i = 0; i < 2 && res != 0; i++) {
+	    mdelay(30);
+	    res = vga_parse_edid();
+    }
+    
 	if (res == 0) {
 		mode = vga_find_max_mode();
 		if (mode) {
