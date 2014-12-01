@@ -209,8 +209,8 @@
 		clocks = <&pclk_pd_alive>;
 		clock-names = "pclk_wdt";
 		interrupts = <GIC_SPI 79 IRQ_TYPE_LEVEL_HIGH>;
-		rockchip,irq = <1>;
-		rockchip,timeout = <60>;
+		rockchip,irq = <0>;
+		rockchip,timeout = <2>;
 		rockchip,atboot = <1>;
 		rockchip,debug = <0>;
 		status = "disabled";
@@ -503,7 +503,7 @@
 			<&clk_i2s_pll &clk_gpll>, <&clk_spdif_pll &clk_gpll>,
 			<&usbphy_480m &otgphy2_480m>;
 		rockchip,clocks-init-rate =
-			<&clk_core 792000000>,	<&clk_gpll 600000000>,//box changed
+			<&clk_core 216000000>,	<&clk_gpll 600000000>,//box changed
 			<&clk_cpll 29700000>,	<&clk_npll 1250000000>,
 			<&aclk_bus_src 300000000>,	<&aclk_bus 300000000>,
 			<&hclk_bus 150000000>,	<&pclk_bus 75000000>,
@@ -924,8 +924,6 @@
 	};
 
 	dvfs {
-		temp-limit-enable = <1>;
-		target-temp = <80>;
 
 		vd_arm: vd_arm {
 			regulator_name = "vdd_arm";
@@ -939,7 +937,9 @@
 						816000 1100000
 						1008000 1100000
 						>;
-					temp-channel = <1>;
+					channel = <0>;
+					temp-limit-enable = <1>;
+					target-temp = <95>;
 					normal-temp-limit = <
 					/*delta-temp    delta-freq*/
 						3	96000
@@ -949,7 +949,7 @@
 						>;
 					performance-temp-limit = <
 						/*temp    freq*/
-						110	816000
+						100     816000
 						>;
 					status = "okay";
 				};
@@ -967,6 +967,7 @@
 						300000 1200000
 						400000 1200000
 						>;
+					channel = <2>;
 					status = "disabled";
 				};
 			};
@@ -994,6 +995,7 @@
 						300000 1200000
 						400000 1200000
 						>;
+					channel = <1>;
 					status = "okay";
 				};
 			};
