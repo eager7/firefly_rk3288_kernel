@@ -46,6 +46,7 @@ static int rk29_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
         unsigned int pll_out = 0, dai_fmt = rtd->card->dai_link->dai_fmt;
         int ret;
+	int div_bclk,div_mclk;
 
         DBG("Enter::%s----%d\n",__FUNCTION__,__LINE__);    
 
@@ -83,11 +84,20 @@ static int rk29_hw_params(struct snd_pcm_substream *substream,
         }
         DBG("Enter:%s, %d, rate=%d\n",__FUNCTION__,__LINE__,params_rate(params));
 	
+#if 0
 	if ((dai_fmt & SND_SOC_DAIFMT_MASTER_MASK) == SND_SOC_DAIFMT_CBS_CFS) {
 		snd_soc_dai_set_sysclk(cpu_dai, 0, pll_out, 0);
 		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_BCLK, (pll_out/4)/params_rate(params)-1);
 		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 3);
 	}
+#else
+	div_bclk = 63;
+	div_mclk = pll_out/(params_rate(params)*64) - 1;
+
+	snd_soc_dai_set_sysclk(cpu_dai, 0, pll_out, 0);
+	snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_BCLK,div_bclk);
+	snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, div_mclk);
+#endif
 
         DBG("Enter:%s, %d, LRCK=%d\n",__FUNCTION__,__LINE__,(pll_out/4)/params_rate(params));
 	  return 0;
