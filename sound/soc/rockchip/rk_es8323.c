@@ -44,8 +44,9 @@ static int rk29_hw_params(struct snd_pcm_substream *substream,
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-        unsigned int pll_out = 0, dai_fmt = rtd->card->dai_link->dai_fmt;
-        int ret;
+	unsigned int dai_fmt = rtd->dai_link->dai_fmt;
+	int ret;
+	unsigned int pll_out = 0;
 	int div_bclk,div_mclk;
 
         DBG("Enter::%s----%d\n",__FUNCTION__,__LINE__);    
@@ -91,6 +92,7 @@ static int rk29_hw_params(struct snd_pcm_substream *substream,
 		snd_soc_dai_set_clkdiv(cpu_dai, ROCKCHIP_DIV_MCLK, 3);
 	}
 #else
+	snd_soc_dai_set_sysclk(codec_dai, 0, pll_out, SND_SOC_CLOCK_IN);
 	div_bclk = 63;
 	div_mclk = pll_out/(params_rate(params)*64) - 1;
 
@@ -140,6 +142,7 @@ static int rk29_es8323_init(struct snd_soc_pcm_runtime *rtd)
 	}
 	
     /* Add specific widgets */
+#if 0
 	snd_soc_dapm_new_controls(dapm, rk29_dapm_widgets,
 				  ARRAY_SIZE(rk29_dapm_widgets));
   	//snd_soc_dapm_nc_pin(codec, "LOUT2");
@@ -149,7 +152,7 @@ static int rk29_es8323_init(struct snd_soc_pcm_runtime *rtd)
         snd_soc_dapm_add_routes(dapm, audio_map, ARRAY_SIZE(audio_map));
        
         snd_soc_dapm_sync(dapm);
- 
+#endif
     return 0;
 }
 
