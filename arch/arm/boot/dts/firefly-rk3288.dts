@@ -640,7 +640,7 @@
 
 
 &clk_core_dvfs_table {
-	support-pvtm = <1>;
+	support-pvtm = <0>;
 	pvtm-operating-points = <
 		/* KHz    uV 	pvtm margin*/
 		126000 900000	25000
