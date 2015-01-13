@@ -304,7 +304,7 @@ static inline unsigned int serial_in(struct uart_rk_port *up, int offset)
 {
 	offset = offset << 2;
 
-	return __raw_readb(up->port.membase + offset);
+	return __raw_readl(up->port.membase + offset);
 }
 
 /* Save the LCR value so it can be re-written when a Busy Detect IRQ occurs. */
@@ -325,7 +325,7 @@ static inline void dwapb_check_clear_ier(struct uart_rk_port *up, int offset)
 static inline void serial_out(struct uart_rk_port *up, int offset, unsigned char value)
 {
 	dwapb_save_out_value(up, offset, value);
-	__raw_writeb(value, up->port.membase + (offset << 2));
+	__raw_writel(value, up->port.membase + (offset << 2));
 	if (offset != UART_TX)
 		dsb();
 	dwapb_check_clear_ier(up, offset);
@@ -1602,21 +1602,19 @@ static void
 serial_rk_pm(struct uart_port *port, unsigned int state,
 	      unsigned int oldstate)
 {
+#ifdef CONFIG_CLOCK_CTRL
 	struct uart_rk_port *up =
 		container_of(port, struct uart_rk_port, port);
 
 	dev_dbg(port->dev, "%s: %s\n", __func__, state ? "disable" : "enable");
 	if (state) {
-#ifdef CONFIG_CLOCK_CTRL
 	clk_disable_unprepare(up->clk);
 	clk_disable_unprepare(up->pclk); 
-#endif
 	} else {
-#ifdef CONFIG_CLOCK_CTRL
 	clk_prepare_enable(up->clk);
 	clk_prepare_enable(up->pclk); 
-#endif
 	}
+#endif
 }
 
 static void serial_rk_release_port(struct uart_port *port)
@@ -2001,7 +1999,7 @@ static int serial_rk_probe(struct platform_device *pdev)
 			dev_info(up->port.dev, "dmam_alloc_coherent dma_rx_buffer fail\n");
 		}
 		else {
-			dev_info(up->port.dev, "dma_rx_buffer 0x%08x\n", (unsigned) up->dma->rx_buffer);
+			dev_info(up->port.dev, "dma_rx_buffer %p\n", up->dma->rx_buffer);
 			dev_info(up->port.dev, "dma_rx_phy 0x%08x\n", (unsigned)up->dma->rx_phy_addr);
 		}
 
@@ -2022,7 +2020,7 @@ static int serial_rk_probe(struct platform_device *pdev)
 			dev_info(up->port.dev, "dmam_alloc_coherent dma_tx_buffer fail\n");
 		}
 		else{
-			dev_info(up->port.dev, "dma_tx_buffer 0x%08x\n", (unsigned) up->dma->tx_buffer);
+			dev_info(up->port.dev, "dma_tx_buffer %p\n", up->dma->tx_buffer);
 			dev_info(up->port.dev, "dma_tx_phy 0x%08x\n", (unsigned) up->dma->tx_phy_addr);
 		}
 		spin_lock_init(&(up->dma->tx_lock));
@@ -2036,7 +2034,7 @@ static int serial_rk_probe(struct platform_device *pdev)
 	if (ret != 0)
 		return ret;
 	platform_set_drvdata(pdev, up);
-	dev_info(&pdev->dev, "membase 0x%08x\n", (unsigned) up->port.membase);
+	dev_info(&pdev->dev, "membase %p\n", up->port.membase);
 #if USE_WAKEUP
 	serial_rk_setup_wakeup_irq(up); 
 #endif

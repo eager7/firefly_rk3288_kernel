@@ -5,7 +5,7 @@
 
 / {
 	fiq-debugger {
-		status = "okay";
+		status = "disabled";
 	};
 
 	hsic-usb-hub{
@@ -403,6 +403,11 @@
         dma-names = "!tx", "!rx";
         pinctrl-0 = <&uart0_xfer &uart0_cts>;
 };
+
+&uart_dbg {
+	status = "okay";
+};
+
 
 &i2c0 {
 	status = "okay";
