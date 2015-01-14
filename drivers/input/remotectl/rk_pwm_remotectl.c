@@ -405,10 +405,11 @@ static irqreturn_t rockchip_pwm_irq(int irq, void *dev_id)
             DBG("lpr=0x%x\n",val);
         }
         writel_relaxed(PWM_CH0_INT, ddata->base + PWM_REG_INTSTS);  
-    
+#if ! defined(CONFIG_RK_IR_NO_DEEP_SLEEP)    
         if (ddata->state==RMC_PRELOAD){
             wake_lock_timeout(&ddata->remotectl_wake_lock, HZ);
         }
+#endif
         return IRQ_HANDLED;
     }
     return IRQ_NONE; 
@@ -537,6 +538,9 @@ static int rk_pwm_probe(struct platform_device *pdev)
    fb_register_client(&remotectl_fb_notifier); 
     wake_lock_init(&ddata->remotectl_wake_lock, WAKE_LOCK_SUSPEND, "rk29_pwm_remote");
     //	if (of_device_is_compatible(np, "rockchip,pwm")) {
+#if defined(CONFIG_RK_IR_NO_DEEP_SLEEP)
+  wake_lock(&ddata->remotectl_wake_lock);
+#endif
     ret = clk_enable(clk);
     if (ret) {
         clk_unprepare(clk);
@@ -614,7 +618,12 @@ static int rk_pwm_probe(struct platform_device *pdev)
 
 static int rk_pwm_remove(struct platform_device *pdev)
 {
-    led_trigger_unregister_simple(ledtrig_ir_click);
+	struct rkxx_remotectl_drvdata *ddata = platform_get_drvdata(pdev);
+
+	led_trigger_unregister_simple(ledtrig_ir_click);
+#if defined(CONFIG_RK_IR_NO_DEEP_SLEEP)
+    wake_unlock(&ddata->remotectl_wake_lock);
+#endif
 	return 0;
 }
 
