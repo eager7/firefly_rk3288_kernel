@@ -246,6 +246,7 @@ struct of_rk_serial {
 	unsigned int id;
 	unsigned int use_dma;	
 	unsigned int uartclk;
+	unsigned int uartbaud;
 };
 #endif
 
@@ -1422,6 +1423,16 @@ serial_rk_set_termios(struct uart_port *port, struct ktermios *termios,
 				  port->uartclk / 16 / 0xffff,
 				  port->uartclk / 16);
 
+if ( port->baud > 0 && port->line != 0)
+{
+       baud = port->baud;
+       printk("%d, baud is:%d\n",port->line,baud);
+}
+else
+{
+       printk("%d,baud is:%d\n",port->line,baud);
+}
+
 	quot = uart_get_divisor(port, baud);
 	//dev_info(up->port.dev, "uartclk:%d\n", port->uartclk/16);
 	//dev_info(up->port.dev, "baud:%d\n", baud);
@@ -1888,6 +1899,9 @@ static int of_rk_serial_parse_dt(struct device_node *np, struct of_rk_serial *rk
 	if(!of_property_read_u32(np, "clock-frequency", &val))
 		rks->uartclk = val;
 
+	if(!of_property_read_u32(np, "current-speed", &val))
+               rks->uartbaud = val;
+
 #if USE_DMA
 	rks->use_dma = 0;
 	for(i = 0; i < 2; i++) {
@@ -1967,6 +1981,7 @@ static int serial_rk_probe(struct platform_device *pdev)
 	up->port.iobase = mem->start;
 	up->port.mapbase = mem->start;
 	up->port.irqflags = IRQF_DISABLED;
+	up->port.baud = rks.uartbaud;
 #if defined(CONFIG_CLOCK_CTRL)
 	up->port.uartclk = clk_get_rate(up->clk);
 #elif defined(CONFIG_OF)

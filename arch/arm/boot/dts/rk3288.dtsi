@@ -429,6 +429,7 @@
 		clock-frequency = <24000000>;
 		clocks = <&clk_uart1>, <&clk_gates6 9>;
 		clock-names = "sclk_uart", "pclk_uart";
+		current-speed = <9600>;
 		reg-shift = <2>;
 		reg-io-width = <4>;
 		dmas = <&pdma1 3>, <&pdma1 4>;
@@ -445,6 +446,7 @@
 		clock-frequency = <24000000>;
 		clocks = <&clk_uart2>, <&clk_gates11 9>;
 		clock-names = "sclk_uart", "pclk_uart";
+		current-speed = <115200>;
 		reg-shift = <2>;
 		reg-io-width = <4>;
 		dmas = <&pdma0 4>, <&pdma0 5>;
