@@ -51,6 +51,8 @@ static int rk3288_hdmi_cec_sendframe(struct hdmi *hdmi,
 {
 	struct hdmi_dev *hdmi_dev = hdmi->property->priv;
 	int i, interrupt;
+	int reTryCnt = 0;
+	int PingRetry = 0, PingFlg = 0;
 
 	CECDBG("TX srcDestAddr %02x opcode %02x ",
 		 frame->srcDestAddr, frame->opcode);
@@ -61,31 +63,74 @@ static int rk3288_hdmi_cec_sendframe(struct hdmi *hdmi,
 
 	}
 	CECDBG("\n");
-	if ((frame->srcDestAddr & 0x0f) == ((frame->srcDestAddr >> 4) & 0x0f)) {
-		/*it is a ping command*/
-		hdmi_writel(hdmi_dev, CEC_TX_DATA0, frame->srcDestAddr);
-		hdmi_writel(hdmi_dev, CEC_TX_CNT, 1);
-	} else {
-		hdmi_writel(hdmi_dev, CEC_TX_DATA0, frame->srcDestAddr);
-		hdmi_writel(hdmi_dev, CEC_TX_DATA0 + 1, frame->opcode);
-		for (i = 0; i < frame->argCount; i++)
-			hdmi_writel(hdmi_dev,
-					CEC_TX_DATA0 + 2 + i, frame->args[i]);
-		hdmi_writel(hdmi_dev, CEC_TX_CNT, frame->argCount + 2);
-	}
-	/*Start TX*/
-	hdmi_msk_reg(hdmi_dev, CEC_CTRL, m_CEC_SEND, v_CEC_SEND(1));
-	i = 20;
-	while (i--) {
-		udelay(1000);
-		interrupt = hdmi_readl(hdmi_dev, IH_CEC_STAT0);
-		if (interrupt & (m_ERR_INITIATOR | m_ARB_LOST |
-					m_NACK | m_DONE)) {
-			hdmi_writel(hdmi_dev, IH_CEC_STAT0,
-					interrupt & (m_ERR_INITIATOR |
-					m_ARB_LOST | m_NACK | m_DONE));
+	while(reTryCnt < 3) {
+		if(reTryCnt) {
+			hdmi_msk_reg(hdmi_dev, CEC_CTRL, m_CEC_FRAME_TYPE, v_CEC_FRAME_TYPE(0));
+		}
+		CECDBG("reTryCnt: %d\n", reTryCnt);
+
+		if ((frame->srcDestAddr & 0x0f) == ((frame->srcDestAddr >> 4) & 0x0f)) {
+			/*it is a ping command*/
+			PingFlg = 1;
+			if(PingRetry >= 3)
+			{
+				break;
+			}
+			CECDBG("PingRetry: %d\n", PingRetry);
+
+			hdmi_writel(hdmi_dev, CEC_TX_DATA0, frame->srcDestAddr);
+			hdmi_writel(hdmi_dev, CEC_TX_CNT, 1);
+		} else {
+			hdmi_writel(hdmi_dev, CEC_TX_DATA0, frame->srcDestAddr);
+			hdmi_writel(hdmi_dev, CEC_TX_DATA0 + 1, frame->opcode);
+			for (i = 0; i < frame->argCount; i++)
+				hdmi_writel(hdmi_dev,
+						CEC_TX_DATA0 + 2 + i, frame->args[i]);
+			hdmi_writel(hdmi_dev, CEC_TX_CNT, frame->argCount + 2);
+		}
+		/*Start TX*/
+		hdmi_msk_reg(hdmi_dev, CEC_CTRL, m_CEC_SEND, v_CEC_SEND(1));
+		i = 60;
+		while (i--) {
+			udelay(2000);
+			interrupt = hdmi_readl(hdmi_dev, IH_CEC_STAT0);
+			if (interrupt & (m_ERR_INITIATOR | m_ARB_LOST |
+						m_NACK | m_DONE)) {
+				hdmi_writel(hdmi_dev, IH_CEC_STAT0,
+						interrupt & (m_ERR_INITIATOR |
+						m_ARB_LOST | m_NACK | m_DONE));
+				break;
+			}
+		}
+
+		if((interrupt & m_DONE)) {
+			if(reTryCnt > 1) {
+				hdmi_msk_reg(hdmi_dev, CEC_CTRL, m_CEC_FRAME_TYPE, v_CEC_FRAME_TYPE(2));
+			}
 			break;
 		}
+		else {
+			reTryCnt ++;
+		}
+
+		if(PingFlg == 1) {
+			if(!(interrupt & (m_DONE | m_NACK))) {/*not DONE, not NACK, retry ping action*/
+				PingRetry ++;
+			}
+			else { /*got ack or nonack, finish ping retry action*/
+				if(reTryCnt > 1) {
+					hdmi_msk_reg(hdmi_dev, CEC_CTRL, m_CEC_FRAME_TYPE, v_CEC_FRAME_TYPE(2));
+				}
+				break;
+			}
+		}
+	}
+
+	if(reTryCnt >= 3)	{
+		CECDBG("send cec frame retry timeout !\n");
+	}
+	if(PingRetry >= 3) {
+		CECDBG("send cec frame pingretry timeout !\n");
 	}
 	CECDBG("%s interrupt 0x%02x\n", __func__, interrupt);
 	if (interrupt & m_DONE)
