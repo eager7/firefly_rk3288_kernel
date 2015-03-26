@@ -56,7 +56,7 @@
         BT,power_gpio = <&gpio4 GPIO_D3 GPIO_ACTIVE_HIGH>;
         BT,reset_gpio = <&gpio4 GPIO_D5 GPIO_ACTIVE_HIGH>;
         BT,wake_gpio = <&gpio4 GPIO_D2 GPIO_ACTIVE_HIGH>;
-        BT,wake_host_irq = <&gpio4 GPIO_D7 GPIO_ACTIVE_LOW>;
+        BT,wake_host_irq = <&gpio4 GPIO_D7 GPIO_ACTIVE_HIGH>;
 
         status = "okay";
     };
@@ -227,7 +227,7 @@
         supports-highspeed;
 	supports-emmc;
         bootpart-no-access;
-	//supports-tSD;//only tsd-sdcard mode 
+	supports-tSD;//only tsd-sdcard mode 
 	supports-DDR_MODE;
 	caps2-mmc-hs200;
 
@@ -508,6 +508,7 @@
 	status = "okay";
 	rockchips,hdmi_audio_source = <0>;
 	hdmi_cec = <0>;
+	hdcp_enable = <0>;
 };
 
 &adc {
@@ -577,20 +578,20 @@
 	support-pvtm = <1>;
 	pvtm-operating-points = <
 		/* KHz    uV 	pvtm margin*/
-		126000 900000	25000
-		216000 900000	25000
-		312000 900000	25000
-		408000 900000	25000
-		600000 950000	50000
-		696000 950000	25000
-		816000 1000000	25000
-		1008000 1050000	25000
-		1200000 1100000	25000
-		1416000 1200000	25000
-		1512000 1300000	25000
-		1608000 1350000	25000
-		1704000 1350000	25000
-		1800000 1350000	25000
+		126000   900000	25000
+		216000   900000	25000
+		312000   900000	25000
+		408000   900000	25000
+		600000   950000	50000
+		696000   950000	50000
+		816000  1000000	50000
+		1008000 1050000	75000
+		1200000 1100000	75000
+		1416000 1200000	75000
+		1512000 1300000	75000
+		1608000 1350000	75000
+		1704000 1350000	75000
+		1800000 1350000	75000
 		>;
 	status="okay";
 };

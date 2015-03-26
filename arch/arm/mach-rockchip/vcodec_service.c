@@ -1065,7 +1065,7 @@ static vpu_reg *reg_init(struct vpu_service_info *pservice, vpu_session *session
 				} else if (reg_check_fmt(reg) == VPU_DEC_FMT_H264) {
 					if (reg_probe_width(reg) > 3200) {
 						// raise frequency for 4k avc.
-						reg->freq = VPU_FREQ_500M;
+						reg->freq = VPU_FREQ_600M;
 					}
 				} else {
 					if (reg_check_interlace(reg)) {
@@ -2352,6 +2352,21 @@ static irqreturn_t vdpu_isr(int irq, void *dev_id)
 			pr_err("error: pp isr with no task waiting\n");
 		} else {
 			reg_from_run_to_done(pservice, pservice->reg_pproc);
+		}
+	}
+	if (pservice->hw_info->hw_id == HEVC_ID) {
+		if (pservice->irq_status & 0x8000) {
+			pr_info("hevc timeout occur, irq status %08x\n", pservice->irq_status);
+			rockchip_iovmm_deactivate(pservice->dev);
+			mdelay(1);
+			rockchip_iovmm_activate(pservice->dev);
+		}
+	} else {
+		if (pservice->irq_status & 0x40) {
+			pr_info("vdpu timeout occur, irq status %08x\n", pservice->irq_status);
+			rockchip_iovmm_deactivate(pservice->dev);
+			mdelay(1);
+			rockchip_iovmm_activate(pservice->dev);
 		}
 	}
 	try_set_reg(pservice);
