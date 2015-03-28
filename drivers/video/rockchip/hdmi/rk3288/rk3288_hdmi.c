@@ -55,8 +55,7 @@ static int rk3288_hdmi_reg_show(struct seq_file *s, void *v)
 	seq_printf(s, "\n-----------------------------------------------------------------");
 
 	for (i = 0; i < ARRAY_SIZE(hdmi_reg_table); i++) {
-		for (j = hdmi_reg_table[i].reg_base;
-		     j <= hdmi_reg_table[i].reg_end; j++) {
+		for (j = hdmi_reg_table[i].reg_base; j <= hdmi_reg_table[i].reg_end; j++) {
 			val = hdmi_readl(hdmi_dev, j);
 			if ((j - hdmi_reg_table[i].reg_base)%16 == 0)
 				seq_printf(s, "\n>>>hdmi_ctl %04x:", j);
@@ -69,8 +68,7 @@ static int rk3288_hdmi_reg_show(struct seq_file *s, void *v)
 	return 0;
 }
 
-static ssize_t rk3288_hdmi_reg_write(struct file *file,
-			const char __user *buf, size_t count, loff_t *ppos)
+static ssize_t rk3288_hdmi_reg_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
 {
 	u32 reg;
 	u32 val;
@@ -367,12 +365,9 @@ static int rk3288_hdmi_probe (struct platform_device *pdev)
 #if defined(CONFIG_DEBUG_FS)
 	hdmi_dev->debugfs_dir = debugfs_create_dir("rk3288-hdmi", NULL);
 	if (IS_ERR(hdmi_dev->debugfs_dir))
-		dev_err(hdmi_dev->hdmi->dev,
-			"failed to create debugfs dir for rk616!\n");
+		dev_err(hdmi_dev->hdmi->dev, "failed to create debugfs dir for rk616!\n");
 	else
-		debugfs_create_file("hdmi", S_IRUSR,
-				    hdmi_dev->debugfs_dir,
-				    hdmi_dev, &rk3288_hdmi_reg_fops);
+		debugfs_create_file("hdmi", S_IRUSR, hdmi_dev->debugfs_dir, hdmi_dev, &rk3288_hdmi_reg_fops);
 #endif
 	delaywork =
 		hdmi_submit_work(hdmi_dev->hdmi, HDMI_HPD_CHANGE, 0, NULL);
