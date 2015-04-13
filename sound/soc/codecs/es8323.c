@@ -914,7 +914,10 @@ static int es8323_resume(struct snd_soc_codec *codec)
 {
 	// u16 i;
 	// u8 data[2];
-	// u16 *cache = codec->reg_cache;	
+	// u16 *cache = codec->reg_cache;
+
+//use thes if do not turn off DVDD when suspend
+#if 0
 	snd_soc_write(codec, 0x2b, 0x80);	
 	snd_soc_write(codec, 0x01, 0x50);
 	snd_soc_write(codec, 0x00, 0x32);
@@ -924,6 +927,75 @@ static int es8323_resume(struct snd_soc_codec *codec)
 	snd_soc_write(codec, 0x31, es8323_DEF_VOL);
 	snd_soc_write(codec, 0x30, es8323_DEF_VOL);
 	snd_soc_write(codec, 0x19, 0x02);			
+#endif
+
+//use these if turn off DVDD when suspend
+#if 1
+	//snd_soc_write(codec, 0x35  , 0xa0); 
+	//snd_soc_write(codec, 0x36  , 0x08); //for 1.8V VDD
+	snd_soc_write(codec, 0x02,0xf3);
+	snd_soc_write(codec, 0x2B,0x80);
+	snd_soc_write(codec, 0x08,0x00);   //ES8388 salve  
+	snd_soc_write(codec, 0x00,0x32);   //
+	snd_soc_write(codec, 0x01,0x72);   //PLAYBACK & RECORD Mode,EnRefr=1
+	snd_soc_write(codec, 0x03,0x59);   //pdn_ana=0,ibiasgen_pdn=0
+	snd_soc_write(codec, 0x05,0x00);   //pdn_ana=0,ibiasgen_pdn=0
+	snd_soc_write(codec, 0x06,0xc3);   //pdn_ana=0,ibiasgen_pdn=0 
+	snd_soc_write(codec, 0x09,0x88);  //ADC L/R PGA =  +24dB
+	//----------------------------------------------------------------------------------------------------------------
+	snd_soc_write(codec, 0x0a,0xf0);  //ADC INPUT=LIN2/RIN2
+	// snd_soc_write(codec, 0x0b,0x02);  //ADC INPUT=LIN2/RIN2 //82
+	snd_soc_write(codec, 0x0b,0x02);  //ADC INPUT=LIN1/RIN1 //02
+	//-----------------------------------------------------------------------------------------------------------------
+	snd_soc_write(codec, 0x0C,0x4c);  //I2S-24BIT
+	snd_soc_write(codec, 0x0d,0x02);  //MCLK/LRCK=256 
+	snd_soc_write(codec, 0x10,0x00);  //ADC Left Volume=0db
+	snd_soc_write(codec, 0x11,0x00);  //ADC Right Volume=0db
+	snd_soc_write(codec, 0x12,0xea); // ALC stereo MAXGAIN: 35.5dB,  MINGAIN: +6dB (Record Volume increased!)
+	snd_soc_write(codec, 0x13,0xc0);
+	snd_soc_write(codec, 0x14,0x05);
+	snd_soc_write(codec, 0x15,0x06);
+	snd_soc_write(codec, 0x16,0x53);  
+	snd_soc_write(codec, 0x17,0x18);  //I2S-16BIT
+	snd_soc_write(codec, 0x18,0x02);
+	snd_soc_write(codec, 0x1A,0x00);  //DAC VOLUME=0DB
+	snd_soc_write(codec, 0x1B,0x00);
+	/*
+	   snd_soc_write(codec, 0x1E,0x01);    //for 47uF capacitors ,15db Bass@90Hz,Fs=44100
+	   snd_soc_write(codec, 0x1F,0x84);
+	   snd_soc_write(codec, 0x20,0xED);
+	   snd_soc_write(codec, 0x21,0xAF);
+	   snd_soc_write(codec, 0x22,0x20);
+	   snd_soc_write(codec, 0x23,0x6C);
+	   snd_soc_write(codec, 0x24,0xE9);
+	   snd_soc_write(codec, 0x25,0xBE);
+	   */
+	snd_soc_write(codec, 0x26,0x12);  //Left DAC TO Left IXER
+	snd_soc_write(codec, 0x27,0xb8);  //Left DAC TO Left MIXER
+	snd_soc_write(codec, 0x28,0x38);
+	snd_soc_write(codec, 0x29,0x38);
+	snd_soc_write(codec, 0x2A,0xb8);
+	snd_soc_write(codec, 0x02,0x00); //aa //START DLL and state-machine,START DSM 
+	snd_soc_write(codec, 0x19,0x02);  //SOFT RAMP RATE=32LRCKS/STEP,Enable ZERO-CROSS CHECK,DAC MUTE
+	snd_soc_write(codec, 0x04,0x0c);   //pdn_ana=0,ibiasgen_pdn=0  
+	msleep(100);
+	snd_soc_write(codec, 0x2e,0x00); 
+	snd_soc_write(codec, 0x2f,0x00);
+	snd_soc_write(codec, 0x30,0x08); 
+	snd_soc_write(codec, 0x31,0x08);
+	msleep(200);
+	snd_soc_write(codec, 0x30,0x0f); 
+	snd_soc_write(codec, 0x31,0x0f);
+	msleep(200);
+	snd_soc_write(codec, 0x30,0x18); 
+	snd_soc_write(codec, 0x31,0x18);
+	msleep(100);
+	snd_soc_write(codec, 0x04,0x2c);   //pdn_ana=0,ibiasgen_pdn=0 
+#endif	
+
+	//s8323_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
+	//codec->dapm.bias_level = SND_SOC_BIAS_STANDBY;
+
 	gpio_set_value(es8323_spk_con_gpio, 1);
 	return 0;
 }
