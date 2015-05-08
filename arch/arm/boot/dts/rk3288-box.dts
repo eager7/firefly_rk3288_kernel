@@ -23,7 +23,7 @@
 	* esp8089 ==> esp8089;
 	* other   ==> for other wifi;
 	*/
-	wifi_chip_type = "bcmwifi";
+	wifi_chip_type = "rtkwifi";
 	sdio_vref = <1800>; //1800mv or 3300mv
  
 	//keep_wifi_power_on;
