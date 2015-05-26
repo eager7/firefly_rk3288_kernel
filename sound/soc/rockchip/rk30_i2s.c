@@ -695,6 +695,7 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 	}
 
 	/* get and request the IRQ */
+#if 0
 	i2s->irq = platform_get_irq(pdev, 0);
 	if (i2s->irq <= 0) {
 		dev_err(&pdev->dev,
@@ -711,7 +712,7 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "i2s devm_request_irq failed (%d).\n", ret);
 		goto err_clk_put;
 	}
-
+#endif
 	regs_base = mem->start;
 
 	i2s->playback_dma_data.addr = regs_base + I2S_TXR_BUFF;
