@@ -717,11 +717,11 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 
 	i2s->playback_dma_data.addr = regs_base + I2S_TXR_BUFF;
 	i2s->playback_dma_data.addr_width = 4;
-	i2s->playback_dma_data.maxburst = 16;
+	i2s->playback_dma_data.maxburst = 1;
 
 	i2s->capture_dma_data.addr = regs_base + I2S_RXR_BUFF;
 	i2s->capture_dma_data.addr_width = 4;
-	i2s->capture_dma_data.maxburst = 16;
+	i2s->capture_dma_data.maxburst = 1;
 
 	pr_info("i2s: maxburst: %d\n", i2s->playback_dma_data.maxburst);
 	i2s->i2s_tx_status = false;
