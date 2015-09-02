@@ -337,18 +337,6 @@ static bool CecRxMsgHandlerLast(struct cec_framedata *pCpi)
 			case CECOP_ACTIVE_SOURCE:
 				/*CecHandleActiveSource( pCpi );*/
 				break;
-
-			case CECOP_REPORT_PHYSICAL_ADDRESS:
-				/*CecHandleReportPhysicalAddress( pCpi );*/
-				cecFrame.srcDestAddr   =
-					MAKE_SRCDEST(cec_dev->address_logic,
-							CEC_LOGADDR_UNREGORBC);
-				cecFrame.opcode        = CECOP_CEC_VERSION;
-				cecFrame.args[0]       = 0x05; /* CEC1.4b*/
-				cecFrame.argCount      = 1;
-				CecSendFrame(&cecFrame);
-				break;
-
 		/* Do not reply to 'Broadcast' msgs that we don't need.*/
 			case CECOP_REQUEST_ACTIVE_SOURCE:
 				CecSendActiveSource();
@@ -372,7 +360,7 @@ void CecSendImageView(void)
 
 	 cecFrame.opcode		= CECOP_IMAGE_VIEW_ON;
 	 cecFrame.srcDestAddr	= MAKE_SRCDEST(cec_dev->address_logic,
-					CEC_LOGADDR_UNREGORBC);
+					CEC_LOGADDR_TV);
 	 cecFrame.argCount		= 0;
 	 CecSendFrame(&cecFrame);
 }
@@ -397,11 +385,26 @@ static void CecEnumeration(void)
 				CEC_LOGADDR_PLAYBACK2,
 				CEC_LOGADDR_PLAYBACK3};
 	int i;
+	int tryNum;
+	int rtValue;
+	int availableCnt;
 
 	if (!cec_dev)
 		return;
+
 	for (i = 0; i < 3; i++) {
-		if (CecSendPing(LogicAddress[i])) {
+		tryNum = 0;
+		rtValue = 0;
+		availableCnt = 0;
+		for(tryNum = 0;tryNum < 3;tryNum ++) {
+			 rtValue = CecSendPing(LogicAddress[i]);
+			 if(rtValue == 1) {
+				availableCnt ++;
+				CECDBG("availableCnt: %d\n", availableCnt);
+			 }
+			 mdelay(5);
+		}
+		if (availableCnt > 1) {
 			cec_dev->address_logic = LogicAddress[i];
 			CECDBG("Logic Address is 0x%x\n",
 					cec_dev->address_logic);

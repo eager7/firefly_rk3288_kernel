@@ -68,7 +68,9 @@ struct rk30_i2s_info {
 	bool i2s_rx_status;
 #ifdef CLK_SET_lATER
 	struct delayed_work clk_delayed_work;
-#endif	
+#endif
+	struct device *dev;
+	int irq;
 };
 
 #define I2S_CLR_ERROR_COUNT 10// check I2S_CLR reg 
@@ -305,6 +307,7 @@ static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 	struct rk30_i2s_info *i2s = to_info(dai);
 	u32 iismod;
 	u32 dmarc;
+	u32 intcr;
 	unsigned long flags;
 	struct hdmi_audio hdmi_audio_cfg;
 
@@ -384,6 +387,9 @@ static int rockchip_i2s_hw_params(struct snd_pcm_substream *substream,
 	iismod = iismod & 0x00007FFF;
 	writel(iismod, &(pheadi2s->I2S_RXCR));
 
+	intcr = readl(&(pheadi2s->I2S_INTCR));
+	intcr |= 0x2;
+	writel(intcr, &(pheadi2s->I2S_INTCR));
 	spin_unlock_irqrestore(&lock, flags);
 
 	return 0;
@@ -578,6 +584,29 @@ static void set_clk_later_work(struct work_struct *work)
 }
 #endif
 
+static irqreturn_t i2s_irq_handler(int irq, void *priv)
+{
+	struct rk30_i2s_info *i2s = priv;
+	u32 int_sta;
+
+	int_sta = readl(&(pheadi2s->I2S_INTSR));
+
+	if (int_sta & 0x1) {
+		/* fifo empty */
+		pr_info("fifo epmty\n");
+	}
+
+	/* underrun occur */
+	if (int_sta & 0x2) {
+		/* clear underrun status */
+		int_sta |= 0x4;
+		writel(int_sta, &(pheadi2s->I2S_INTCR));
+		pr_info("fifo underrun\n");
+	}
+
+	return IRQ_HANDLED;
+}
+
 static int rockchip_i2s_probe(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
@@ -665,16 +694,36 @@ static int rockchip_i2s_probe(struct platform_device *pdev)
 		goto err_clk_put;
 	}
 
+	/* get and request the IRQ */
+#if 0
+	i2s->irq = platform_get_irq(pdev, 0);
+	if (i2s->irq <= 0) {
+		dev_err(&pdev->dev,
+			"failed to get i2s irq resource (%d).\n",
+			i2s->irq);
+		ret = -ENXIO;
+		goto err_clk_put;
+	}
+
+	ret = devm_request_irq(&pdev->dev, i2s->irq,
+			     i2s_irq_handler, IRQF_TRIGGER_HIGH,
+			     dev_name(&pdev->dev), i2s);
+	if (ret) {
+		dev_err(&pdev->dev, "i2s devm_request_irq failed (%d).\n", ret);
+		goto err_clk_put;
+	}
+#endif
 	regs_base = mem->start;
 
 	i2s->playback_dma_data.addr = regs_base + I2S_TXR_BUFF;
 	i2s->playback_dma_data.addr_width = 4;
-	i2s->playback_dma_data.maxburst = 1;
+	i2s->playback_dma_data.maxburst = 16;
 
 	i2s->capture_dma_data.addr = regs_base + I2S_RXR_BUFF;
 	i2s->capture_dma_data.addr_width = 4;
-	i2s->capture_dma_data.maxburst = 1;
+	i2s->capture_dma_data.maxburst = 16;
 
+	pr_info("i2s: maxburst: %d\n", i2s->playback_dma_data.maxburst);
 	i2s->i2s_tx_status = false;
 	i2s->i2s_rx_status = false;
 

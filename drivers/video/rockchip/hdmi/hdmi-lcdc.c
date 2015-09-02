@@ -456,8 +456,14 @@ static void hdmi_sort_modelist(struct hdmi_edid *edid)
 	}
 	fb_destroy_modelist(head);
 
-	edid->modelist = head_new;
-	edid->modelist.prev->next = &edid->modelist;
+	if(head_new.next == &head_new) {
+		pr_info("There is no available video mode in EDID.\n");
+		INIT_LIST_HEAD(&edid->modelist);
+	} else {
+		edid->modelist = head_new;
+		edid->modelist.prev->next = &edid->modelist;
+		edid->modelist.next->prev = &edid->modelist;
+	}
 }
 
 /**

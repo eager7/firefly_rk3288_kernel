@@ -58,6 +58,10 @@ if(type == WIFI_RTKWIFI) {
     printk("Current WiFi chip is RTL8812AU.\n");
 #endif
 
+#ifdef CONFIG_RTL8821AU
+    count = sprintf(_buf, "%s", "RTL8821AU");
+    printk("Current WiFi chip is RTL8821AU.\n");
+#endif
 
 }
 

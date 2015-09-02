@@ -1760,7 +1760,7 @@ int rockchip_wifi_init_module_rtkwifi(void)
     printk("=======================================================\n");
     printk("==== Launching Wi-Fi driver! (Powered by Rockchip) ====\n");
     printk("=======================================================\n");
-    printk("Realtek 8812AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8192_DRV_VERSION);
+    printk("Realtek 8812AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8812_DRV_VERSION);
     rockchip_wifi_power(1);
 
     return rtw_drv_entry();
@@ -1772,7 +1772,7 @@ void rockchip_wifi_exit_module_rtkwifi(void)
     printk("=======================================================\n");
     printk("==== Dislaunching Wi-Fi driver! (Powered by Rockchip) ====\n");
     printk("=======================================================\n");
-    printk("Realtek 8812AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8192_DRV_VERSION);
+    printk("Realtek 8812AU USB WiFi driver (Powered by Rockchip,Ver %s) init.\n", RTL8812_DRV_VERSION);
     rtw_drv_halt();
     rockchip_wifi_power(0);
 }
