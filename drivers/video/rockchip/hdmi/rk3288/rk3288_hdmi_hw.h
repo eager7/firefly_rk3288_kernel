@@ -92,6 +92,8 @@ enum PHYTYPE {
 #define m_AVI_INFOFRAME		(1 << 1)
 #define m_GCP			(1 << 0)
 
+#define v_AVI_INFOFRAME(n)	(((n)&0x01) << 1)
+
 #define IH_FC_STAT2			0x0102
 #define m_LOWPRIO_OVERFLOW	(1 << 1)
 #define m_HIGHPRIO_OVERFLOW	(1 << 0)
@@ -1505,4 +1507,9 @@ void rk3288_hdmi_cec_init(struct hdmi *hdmi);
 void rk3288_hdmi_cec_isr(struct hdmi_dev *hdmi_dev, char cec_int);
 void rk3288_hdmi_hdcp_init(struct hdmi *hdmi);
 void rk3288_hdmi_hdcp_stop(struct hdmi *hdmi);
+void rk3288_hdmi_hdcp_isr(struct hdmi_dev *hdmi_dev, int hdcp_int);
+int rk3288_hdmi_read_phy(struct hdmi_dev *hdmi_dev,
+			 int reg_addr);
+int rk3288_hdmi_write_phy(struct hdmi_dev *hdmi_dev,
+			  int reg_addr, int val);
 #endif

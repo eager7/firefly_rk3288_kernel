@@ -98,11 +98,57 @@ static int rk3288_hdmi_reg_open(struct inode *inode, struct file *file)
 	return single_open(file, rk3288_hdmi_reg_show, hdmi_dev);
 }
 
+static int rk3288_hdmi_reg_phy_show(struct seq_file *s, void *v)
+{
+	int i = 0;
+
+	seq_puts(s, "\n>>>hdmi_phy reg ");
+	for (i = 0; i < 0x28; i++)
+		seq_printf(s, "regs %02x val %04x\n",
+			   i, rk3288_hdmi_read_phy(hdmi_dev, i));
+
+	return 0;
+}
+
+static ssize_t rk3288_hdmi_reg_phy_write(struct file *file,
+			const char __user *buf, size_t count, loff_t *ppos)
+{
+	u32 reg, val;
+	char kbuf[25];
+
+	if (copy_from_user(kbuf, buf, count))
+		return -EFAULT;
+	if (sscanf(kbuf, "%x%x", &reg, &val) == -1)
+		return -EFAULT;
+	dev_info(hdmi_dev->hdmi->dev,
+		 "/**********hdmi reg phy config******/");
+	dev_info(hdmi_dev->hdmi->dev, "\n reg=%x val=%x\n", reg, val);
+	rk3288_hdmi_write_phy(hdmi_dev, reg, val);
+	return count;
+
+	return count;
+}
+static int rk3288_hdmi_reg_phy_open(struct inode *inode, struct file *file)
+{
+	struct hdmi_dev *hdmi_dev = inode->i_private;
+
+	return single_open(file, rk3288_hdmi_reg_phy_show, hdmi_dev);
+}
+
 static const struct file_operations rk3288_hdmi_reg_fops = {
 	.owner		= THIS_MODULE,
 	.open		= rk3288_hdmi_reg_open,
 	.read		= seq_read,
 	.write		= rk3288_hdmi_reg_write,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static const struct file_operations rk3288_hdmi_reg_phy_fops = {
+	.owner		= THIS_MODULE,
+	.open		= rk3288_hdmi_reg_phy_open,
+	.read		= seq_read,
+	.write		= rk3288_hdmi_reg_phy_write,
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
@@ -387,10 +433,14 @@ static int rk3288_hdmi_probe(struct platform_device *pdev)
 	if (IS_ERR(hdmi_dev->debugfs_dir))
 		dev_err(hdmi_dev->hdmi->dev,
 			"failed to create debugfs dir for rk616!\n");
-	else
+	else {
 		debugfs_create_file("hdmi", S_IRUSR,
 				    hdmi_dev->debugfs_dir,
 				    hdmi_dev, &rk3288_hdmi_reg_fops);
+		debugfs_create_file("phy", S_IRUSR,
+				    hdmi_dev->debugfs_dir,
+				    hdmi_dev, &rk3288_hdmi_reg_phy_fops);
+	}
 #endif
 	delaywork =
 		hdmi_submit_work(hdmi_dev->hdmi, HDMI_HPD_CHANGE, 0, NULL);
