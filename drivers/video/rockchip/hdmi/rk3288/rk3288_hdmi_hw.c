@@ -1422,14 +1422,14 @@ static int hdmi_dev_config_audio(struct hdmi *hdmi, struct hdmi_audio *audio)
 		hdmi_msk_reg(hdmi_dev, AUD_SPDIF0,
 			     m_SW_SAUD_FIFO_RST, v_SW_SAUD_FIFO_RST(1));
 	} else {
-		/* disable i2s channel */
-		hdmi_msk_reg(hdmi_dev, AUD_CONF0, m_I2S_IN_EN, v_I2S_IN_EN(0));
 		/*Mask fifo empty and full int and reset fifo*/
 		hdmi_msk_reg(hdmi_dev, AUD_INT,
 			     m_FIFO_EMPTY_MASK | m_FIFO_FULL_MASK,
 			     v_FIFO_EMPTY_MASK(1) | v_FIFO_FULL_MASK(1));
 		hdmi_msk_reg(hdmi_dev, AUD_CONF0,
 			     m_SW_AUD_FIFO_RST, v_SW_AUD_FIFO_RST(1));
+		hdmi_writel(hdmi_dev, MC_SWRSTZREQ, 0xF7);
+		udelay(100);
 
 		if (I2S_CHANNEL_7_8 == channel) {
 			pr_info("hbr mode.\n");
