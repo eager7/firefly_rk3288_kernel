@@ -433,6 +433,7 @@ struct rk_lcdc_drv_ops {
 	int (*dump_reg) (struct rk_lcdc_driver * dev_drv);
 	int (*mmu_en) (struct rk_lcdc_driver * dev_drv);
 	int (*cfg_done) (struct rk_lcdc_driver * dev_drv);
+	int (*set_overscan) (struct rk_lcdc_driver *dev_drv, struct overscan *overscan);
 };
 
 struct rk_fb_area_par {
@@ -548,8 +549,10 @@ struct rk_lcdc_driver {
 	char mmu_dts_name[40];
 	int iommu_enabled;
 	struct rk_fb_reg_area_data reg_area_data;
+        struct rk_fb_reg_data *front_regs;
+        struct mutex front_lock;
 	struct mutex fb_win_id_mutex;
-
+	struct mutex win_config;
 	struct completion frame_done;	//sync for pan_display,whe we set a new frame address to lcdc register,we must make sure the frame begain to display
 	spinlock_t cpl_lock;	//lock for completion  frame done
 	int first_frame;
@@ -561,6 +564,7 @@ struct rk_lcdc_driver {
 	int			suspend_flag;
 	int			cabc_mode;
 	struct list_head	update_regs_list;
+        struct list_head        saved_list;
 	struct mutex		update_regs_list_lock;
 	struct kthread_worker	update_regs_worker;
 	struct task_struct	*update_regs_thread;
@@ -577,6 +581,7 @@ struct rk_lcdc_driver {
 #endif
 	struct overscan overscan;
 	int enable;
+	int config_done;
 	struct device *mmu_dev;
 };
 

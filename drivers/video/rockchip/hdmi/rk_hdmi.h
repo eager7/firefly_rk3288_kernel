@@ -304,6 +304,7 @@ struct hdmi_ops {
 	int (*setCEC)(struct hdmi *);
 	/* call back for hdcp operatoion */
 	void (*hdcp_cb)(struct hdmi *);
+	void (*hdcp_auth2nd)(struct hdmi*);
 	void (*hdcp_irq_cb)(int);
 	int (*hdcp_power_on_cb)(void);
 	void (*hdcp_power_off_cb)(void);
@@ -406,6 +407,7 @@ struct hdmi {
 #define HDMI_UNMUTE_AUDIO		(HDMI_SYSFS_SRC		| 9)
 #define HDMI_SET_COLOR			(HDMI_SYSFS_SRC		| 10)
 #define HDMI_ENABLE_HDCP		(HDMI_SYSFS_SRC		| 11)
+#define HDMI_HDCP_AUTH_2ND		(HDMI_IRQ_SRC		| 12)
 
 #define HDMI_DEFAULT_SCALE		95
 #define HDMI_AUTO_CONFIG		true

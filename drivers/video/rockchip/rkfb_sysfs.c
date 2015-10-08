@@ -462,9 +462,8 @@ static ssize_t set_scale(struct device *dev, struct device_attribute *attr,
 		}
 	}
 //	printk("%d %d %d %d\n", dev_drv->overscan.left, dev_drv->overscan.top, dev_drv->overscan.right, dev_drv->overscan.bottom);
-	if(dev_drv->enable) {	
-		dev_drv->ops->load_screen(dev_drv, 1);
-		dev_drv->ops->cfg_done(dev_drv);
+	if(dev_drv->enable && dev_drv->ops->set_overscan) {	
+		dev_drv->ops->set_overscan(dev_drv, &dev_drv->overscan);
 	}
 	return count;
 }
