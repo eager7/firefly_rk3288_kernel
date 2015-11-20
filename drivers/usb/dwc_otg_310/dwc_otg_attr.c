@@ -327,6 +327,9 @@
 #include "dwc_otg_core_if.h"
 #include "dwc_otg_pcd_if.h"
 #include "dwc_otg_hcd_if.h"
+#include "dwc_otg_regs.h"
+#include "dwc_otg_cil.h"
+#include "usbdev_rk.h"
 
 /*
  * MACROs for defining sysfs attribute
@@ -556,73 +559,6 @@ DWC_OTG_DEVICE_ATTR_REG32_RO(hptxfsiz,
 DWC_OTG_DEVICE_ATTR_REG32_RW(hprt0, otg_dev->core_if->host_if->hprt0, "HPRT0");
 
 /**
- * @todo Add code to initiate the HNP.
- */
-/**
- * Show the HNP status bit
- */
-static ssize_t hnp_show(struct device *_dev,
-			struct device_attribute *attr, char *buf)
-{
-
-	dwc_otg_device_t *otg_dev = _dev->platform_data;
-	return sprintf(buf, "HstNegScs = 0x%x\n",
-		       dwc_otg_get_hnpstatus(otg_dev->core_if));
-}
-
-/**
- * Set the HNP Request bit
- */
-static ssize_t hnp_store(struct device *_dev,
-			 struct device_attribute *attr,
-			 const char *buf, size_t count)
-{
-
-	dwc_otg_device_t *otg_dev = _dev->platform_data;
-	uint32_t in = simple_strtoul(buf, NULL, 16);
-	dwc_otg_set_hnpreq(otg_dev->core_if, in);
-	return count;
-}
-
-DEVICE_ATTR(hnp, 0644, hnp_show, hnp_store);
-
-/**
- * @todo Add code to initiate the SRP.
- */
-/**
- * Show the SRP status bit
- */
-static ssize_t srp_show(struct device *_dev,
-			struct device_attribute *attr, char *buf)
-{
-#ifndef DWC_HOST_ONLY
-
-	dwc_otg_device_t *otg_dev = _dev->platform_data;
-	return sprintf(buf, "SesReqScs = 0x%x\n",
-		       dwc_otg_get_srpstatus(otg_dev->core_if));
-#else
-	return sprintf(buf, "Host Only Mode!\n");
-#endif
-}
-
-/**
- * Set the SRP Request bit
- */
-static ssize_t srp_store(struct device *_dev,
-			 struct device_attribute *attr,
-			 const char *buf, size_t count)
-{
-#ifndef DWC_HOST_ONLY
-
-	dwc_otg_device_t *otg_dev = _dev->platform_data;
-	dwc_otg_pcd_initiate_srp(otg_dev->pcd);
-#endif
-	return count;
-}
-
-DEVICE_ATTR(srp, 0644, srp_show, srp_store);
-
-/**
  * @todo Need to do more for power on/off?
  */
 /**
@@ -644,10 +580,15 @@ static ssize_t buspower_store(struct device *_dev,
 			      struct device_attribute *attr,
 			      const char *buf, size_t count)
 {
-
 	dwc_otg_device_t *otg_dev = _dev->platform_data;
+	struct dwc_otg_platform_data *pldata = otg_dev->pldata;
 	uint32_t on = simple_strtoul(buf, NULL, 16);
+
+	if (on != 0 && on != 1)
+		return -EINVAL;
+
 	dwc_otg_set_prtpower(otg_dev->core_if, on);
+	pldata->power_enable(on);
 	return count;
 }
 
@@ -750,10 +691,8 @@ static ssize_t remote_wakeup_show(struct device *_dev,
 
 	dwc_otg_device_t *otg_dev = _dev->platform_data;
 	return sprintf(buf,
-		       "Remote Wakeup Sig = %d Enabled = %d LPM Remote Wakeup = %d\n",
-		       dwc_otg_get_remotewakesig(otg_dev->core_if),
-		       dwc_otg_pcd_get_rmwkup_enable(otg_dev->pcd),
-		       dwc_otg_get_lpm_remotewakeenabled(otg_dev->core_if));
+		       "Remote Wakeup Sig = %d\n",
+		       dwc_otg_get_remotewakesig(otg_dev->core_if));
 #else
 	return sprintf(buf, "Host Only Mode!\n");
 #endif /* DWC_HOST_ONLY */
@@ -1144,6 +1083,85 @@ DEVICE_ATTR(sleep_status, S_IRUGO | S_IWUSR, sleepstatus_show,
 
 #endif /* CONFIG_USB_DWC_OTG_LPM_ENABLE */
 
+static int test_sq(dwc_otg_core_if_t *core_if)
+{
+	hprt0_data_t hprt0 = { .d32 = 0 };
+	dctl_data_t dctl = { .d32 = 0 };
+	dsts_data_t dsts = { .d32 = 0 };
+
+	/**
+	* Step.1 check current mode
+	* Step.2 check connection
+	* Step.3 enter test packet mode
+	*/
+
+	if (dwc_otg_is_host_mode(core_if)) {
+		DWC_PRINTF("Host Mode\n");
+		hprt0.d32 = DWC_READ_REG32(core_if->host_if->hprt0);
+
+		if (hprt0.b.prtena && !hprt0.b.prtsusp &&
+		    hprt0.b.prtspd == DWC_HPRT0_PRTSPD_HIGH_SPEED) {
+			hprt0.d32 = 0;
+			hprt0.b.prttstctl = 0x4;
+			DWC_WRITE_REG32(core_if->host_if->hprt0, hprt0.d32);
+			DWC_PRINTF("Start packet test\n");
+			return 0;
+
+		} else
+			DWC_PRINTF("Invalid connect status HPRT0 = 0x%08x\n",
+				   hprt0.d32);
+	} else {
+		DWC_PRINTF("Device Mode\n");
+		dsts.d32 = DWC_READ_REG32(&core_if->dev_if->dev_global_regs->dsts);
+
+		if (!dsts.b.suspsts &&
+		    dsts.b.enumspd == DWC_DSTS_ENUMSPD_HS_PHY_30MHZ_OR_60MHZ) {
+			dctl.b.tstctl = 0x4;
+			DWC_WRITE_REG32(&core_if->dev_if->dev_global_regs->dctl,
+					dctl.d32);
+			DWC_PRINTF("Start packet test\n");
+			return 0;
+
+		} else
+			DWC_PRINTF("Invalid connect status DSTS = 0x%08x\n",
+				   dsts.d32);
+	}
+
+	return -1;
+
+}
+
+/**
+* Show the usage of usb controler test_sq attribute.
+*/
+static ssize_t test_sq_show(struct device *_dev,
+				struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,
+	"USAGE : echo anything to \"test\" to start test packet pattern\n");
+}
+
+static ssize_t test_sq_store(struct device *_dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+
+{
+	dwc_otg_device_t *otg_dev = _dev->platform_data;
+	struct dwc_otg_platform_data *pldata = otg_dev->pldata;
+
+	if (pldata->phy_status == USB_PHY_SUSPEND) {
+		DWC_PRINTF("Invalid status : SUSPEND\n");
+		return -EBUSY;
+	}
+
+	if (test_sq(otg_dev->core_if))
+		return -EBUSY;
+	else
+		return count;
+}
+
+DEVICE_ATTR(test_sq, S_IWUSR | S_IRUSR, test_sq_show, test_sq_store);
+
 /**@}*/
 
 /**
@@ -1156,12 +1174,6 @@ void dwc_otg_attr_create(struct platform_device *dev)
 	error = device_create_file(&dev->dev, &dev_attr_regoffset);
 	error = device_create_file(&dev->dev, &dev_attr_regvalue);
 	error = device_create_file(&dev->dev, &dev_attr_mode);
-	error = device_create_file(&dev->dev, &dev_attr_hnpcapable);
-	error = device_create_file(&dev->dev, &dev_attr_srpcapable);
-	error = device_create_file(&dev->dev, &dev_attr_hsic_connect);
-	error = device_create_file(&dev->dev, &dev_attr_inv_sel_hsic);
-	error = device_create_file(&dev->dev, &dev_attr_hnp);
-	error = device_create_file(&dev->dev, &dev_attr_srp);
 	error = device_create_file(&dev->dev, &dev_attr_buspower);
 	error = device_create_file(&dev->dev, &dev_attr_bussuspend);
 	error = device_create_file(&dev->dev, &dev_attr_mode_ch_tim_en);
@@ -1180,7 +1192,6 @@ void dwc_otg_attr_create(struct platform_device *dev)
 	error = device_create_file(&dev->dev, &dev_attr_hptxfsiz);
 	error = device_create_file(&dev->dev, &dev_attr_hprt0);
 	error = device_create_file(&dev->dev, &dev_attr_remote_wakeup);
-	error = device_create_file(&dev->dev, &dev_attr_rem_wakeup_pwrdn);
 	error = device_create_file(&dev->dev, &dev_attr_disconnect_us);
 	error = device_create_file(&dev->dev, &dev_attr_regdump);
 	error = device_create_file(&dev->dev, &dev_attr_spramdump);
@@ -1194,6 +1205,7 @@ void dwc_otg_attr_create(struct platform_device *dev)
 	error = device_create_file(&dev->dev, &dev_attr_besl_reject);
 	error = device_create_file(&dev->dev, &dev_attr_hird_thres);
 #endif
+	error = device_create_file(&dev->dev, &dev_attr_test_sq);
 }
 
 /**
@@ -1204,12 +1216,6 @@ void dwc_otg_attr_remove(struct platform_device *dev)
 	device_remove_file(&dev->dev, &dev_attr_regoffset);
 	device_remove_file(&dev->dev, &dev_attr_regvalue);
 	device_remove_file(&dev->dev, &dev_attr_mode);
-	device_remove_file(&dev->dev, &dev_attr_hnpcapable);
-	device_remove_file(&dev->dev, &dev_attr_srpcapable);
-	device_remove_file(&dev->dev, &dev_attr_hsic_connect);
-	device_remove_file(&dev->dev, &dev_attr_inv_sel_hsic);
-	device_remove_file(&dev->dev, &dev_attr_hnp);
-	device_remove_file(&dev->dev, &dev_attr_srp);
 	device_remove_file(&dev->dev, &dev_attr_buspower);
 	device_remove_file(&dev->dev, &dev_attr_bussuspend);
 	device_remove_file(&dev->dev, &dev_attr_mode_ch_tim_en);
@@ -1228,7 +1234,6 @@ void dwc_otg_attr_remove(struct platform_device *dev)
 	device_remove_file(&dev->dev, &dev_attr_hptxfsiz);
 	device_remove_file(&dev->dev, &dev_attr_hprt0);
 	device_remove_file(&dev->dev, &dev_attr_remote_wakeup);
-	device_remove_file(&dev->dev, &dev_attr_rem_wakeup_pwrdn);
 	device_remove_file(&dev->dev, &dev_attr_disconnect_us);
 	device_remove_file(&dev->dev, &dev_attr_regdump);
 	device_remove_file(&dev->dev, &dev_attr_spramdump);
@@ -1242,4 +1247,5 @@ void dwc_otg_attr_remove(struct platform_device *dev)
 	device_remove_file(&dev->dev, &dev_attr_besl_reject);
 	device_remove_file(&dev->dev, &dev_attr_hird_thres);
 #endif
+	device_remove_file(&dev->dev, &dev_attr_test_sq);
 }

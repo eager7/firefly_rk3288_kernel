@@ -109,8 +109,8 @@ int32_t dwc_otg_handle_otg_intr(dwc_otg_core_if_t *core_if)
 				dctl.d32);
 		dwc_otg_disable_global_interrupts(core_if);
 		core_if->otg_dev->pcd->vbus_status = USB_BC_TYPE_DISCNT;
-		DWC_PRINTF
-		    ("********session end ,soft disconnect************************\n");
+
+		DWC_PRINTF("********session end ,soft disconnect***********\n");
 
 		gotgctl.d32 = DWC_READ_REG32(&global_regs->gotgctl);
 
@@ -389,6 +389,7 @@ int32_t dwc_otg_handle_conn_id_status_change_intr(dwc_otg_core_if_t *core_if)
 	gintmsk_data_t gintmsk = {.d32 = 0 };
 	gintsts_data_t gintsts = {.d32 = 0 };
 
+	dwc_otg_disable_host_interrupts(core_if);
 	if (core_if->usb_mode != USB_MODE_NORMAL)
 		goto out;
 
@@ -405,8 +406,8 @@ int32_t dwc_otg_handle_conn_id_status_change_intr(dwc_otg_core_if_t *core_if)
 	 * Release lock before scheduling workq as it holds spinlock during scheduling
 	 */
 
-	DWC_WORKQ_SCHEDULE(core_if->wq_otg, w_conn_id_status_change,
-			   core_if, "connection id status change");
+	/*DWC_WORKQ_SCHEDULE(core_if->wq_otg, w_conn_id_status_change,
+			   core_if, "connection id status change");*/
 	DWC_SPINLOCK(core_if->lock);
 out:
 	/* Set flag and clear interrupt */

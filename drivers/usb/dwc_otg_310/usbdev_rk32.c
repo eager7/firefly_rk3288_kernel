@@ -1,4 +1,4 @@
-
+#ifdef CONFIG_ARM
 #include "usbdev_rk.h"
 #include "usbdev_grf_regs.h"
 #include "dwc_otg_regs.h"
@@ -134,9 +134,27 @@ static int usb20otg_get_status(int id)
 }
 
 #ifdef CONFIG_RK_USB_UART
+/**
+ *  dwc_otg_uart_enabled - check if a usb-uart bypass func is enabled in DT
+ *
+ *  Returns true if the status property of node "usb_uart" is set to "okay"
+ *  or "ok", if this property is absent it will use the default status "ok"
+ *  0 otherwise
+ */
+static bool dwc_otg_uart_enabled(void)
+{
+	struct device_node *np;
+
+	np = of_find_node_by_name(NULL, "usb_uart");
+	if (np && of_device_is_available(np))
+		return true;
+
+	return false;
+}
+
 static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
 {
-	if (1 == enter_usb_uart_mode) {
+	if ((1 == enter_usb_uart_mode) && dwc_otg_uart_enabled()) {
 		/* bypass dm, enter uart mode */
 		control_usb->grf_uoc0_base->CON3 = (0x00c0 | (0x00c0 << 16));
 
@@ -145,15 +163,21 @@ static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
 		control_usb->grf_uoc0_base->CON3 = (0x00c0 << 16);
 	}
 }
+#else
+static void dwc_otg_uart_mode(void *pdata, int enter_usb_uart_mode)
+{
+}
 #endif
 
 static void usb20otg_power_enable(int enable)
 {
 	if (0 == enable) {
+		rk_battery_charger_detect_cb(USB_OTG_POWER_OFF);
 		/* disable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 0);
 	} else if (1 == enable) {
+		rk_battery_charger_detect_cb(USB_OTG_POWER_ON);
 		/* enable otg_drv power */
 		if (gpio_is_valid(control_usb->otg_gpios->gpio))
 			gpio_set_value(control_usb->otg_gpios->gpio, 1);
@@ -172,10 +196,8 @@ struct dwc_otg_platform_data usb20otg_pdata_rk3288 = {
 	.clock_enable = usb20otg_clock_enable,
 	.get_status = usb20otg_get_status,
 	.power_enable = usb20otg_power_enable,
-#ifdef CONFIG_RK_USB_UART
 	.dwc_otg_uart_mode = dwc_otg_uart_mode,
-#endif
-	.bc_detect_cb = usb20otg_battery_charger_detect_cb,
+	.bc_detect_cb = rk_battery_charger_detect_cb,
 };
 
 #endif
@@ -186,7 +208,7 @@ static void usb20host_hw_init(void)
 {
 	/* usb phy config init
 	 * set common_on = 0, in suspend mode, host1 PLL blocks remain powered.
-	 * for RK3288, hsic and other modules use host1 (DWC_OTG) 480M phy clk.
+	 * for RK3288, ehci1 and other modules use host1 (DWC_OTG) 480M phy clk.
 	 */
 	control_usb->grf_uoc2_base->CON0 = (1 << 16) | 0;
 
@@ -317,7 +339,8 @@ static void usb20host_power_enable(int enable)
 {
 	if (0 == enable) {
 		/* disable host_drv power */
-		/* do not disable power in default */
+		if (gpio_is_valid(control_usb->host_gpios->gpio))
+			gpio_set_value(control_usb->host_gpios->gpio, 0);
 	} else if (1 == enable) {
 		/* enable host_drv power */
 		if (gpio_is_valid(control_usb->host_gpios->gpio))
@@ -341,11 +364,11 @@ struct dwc_otg_platform_data usb20host_pdata_rk3288 = {
 
 #endif
 
-#ifdef CONFIG_USB_EHCI_RKHSIC
-static void rk_hsic_hw_init(void)
+#ifdef CONFIG_USB_EHCI1_RK
+static void rk_ehci1_hw_init(void)
 {
 	/* usb phy config init
-	 * hsic phy config init, set hsicphy_txsrtune */
+	 * ehci1 phy config init, set ehci1phy_txsrtune */
 	control_usb->grf_uoc3_base->CON0 = ((0xf << 6) << 16) | (0xf << 6);
 
 	/* other haredware init
@@ -361,91 +384,91 @@ static void rk_hsic_hw_init(void)
 	control_usb->grf_uoc4_base->CON0 = 0x00ff00bc;
 }
 
-static void rk_hsic_clock_init(void *pdata)
+static void rk_ehci1_clock_init(void *pdata)
 {
-	/* By default, hsicphy_480m's parent is otg phy 480MHz clk
+	/* By default, ehci1phy_480m's parent is otg phy 480MHz clk
 	 * rk3188 must use host phy 480MHz clk, because if otg bypass
 	 * to uart mode, otg phy 480MHz clk will be closed automatically
 	 */
 	struct rkehci_platform_data *usbpdata = pdata;
-	struct clk *ahbclk, *phyclk480m_hsic, *phyclk12m_hsic;
+	struct clk *ahbclk, *phyclk480m_ehci1, *phyclk12m_ehci1;
 
-	phyclk480m_hsic = devm_clk_get(usbpdata->dev, "hsicphy_480m");
-	if (IS_ERR(phyclk480m_hsic)) {
-		dev_err(usbpdata->dev, "Failed to get hsicphy_480m\n");
+	phyclk480m_ehci1 = devm_clk_get(usbpdata->dev, "ehci1phy_480m");
+	if (IS_ERR(phyclk480m_ehci1)) {
+		dev_err(usbpdata->dev, "Failed to get ehci1phy_480m\n");
 		return;
 	}
 
-	phyclk12m_hsic = devm_clk_get(usbpdata->dev, "hsicphy_12m");
-	if (IS_ERR(phyclk12m_hsic)) {
-		dev_err(usbpdata->dev, "Failed to get hsicphy_12m\n");
+	phyclk12m_ehci1 = devm_clk_get(usbpdata->dev, "ehci1phy_12m");
+	if (IS_ERR(phyclk12m_ehci1)) {
+		dev_err(usbpdata->dev, "Failed to get ehci1phy_12m\n");
 		return;
 	}
 
-	ahbclk = devm_clk_get(usbpdata->dev, "hclk_hsic");
+	ahbclk = devm_clk_get(usbpdata->dev, "hclk_ehci1");
 	if (IS_ERR(ahbclk)) {
-		dev_err(usbpdata->dev, "Failed to get hclk_hsic\n");
+		dev_err(usbpdata->dev, "Failed to get hclk_ehci1\n");
 		return;
 	}
 
-	usbpdata->hclk_hsic = ahbclk;
-	usbpdata->hsic_phy_480m = phyclk480m_hsic;
-	usbpdata->hsic_phy_12m = phyclk12m_hsic;
+	usbpdata->hclk_ehci = ahbclk;
+	usbpdata->ehci_phy_480m = phyclk480m_ehci1;
+	usbpdata->ehci_phy_12m = phyclk12m_ehci1;
 }
 
-static void rk_hsic_clock_enable(void *pdata, int enable)
+static void rk_ehci1_clock_enable(void *pdata, int enable)
 {
 	struct rkehci_platform_data *usbpdata = pdata;
 
 	if (enable == usbpdata->clk_status)
 		return;
 	if (enable) {
-		clk_prepare_enable(usbpdata->hclk_hsic);
-		clk_prepare_enable(usbpdata->hsic_phy_480m);
-		clk_prepare_enable(usbpdata->hsic_phy_12m);
+		clk_prepare_enable(usbpdata->hclk_ehci);
+		clk_prepare_enable(usbpdata->ehci_phy_480m);
+		clk_prepare_enable(usbpdata->ehci_phy_12m);
 		usbpdata->clk_status = 1;
 	} else {
-		clk_disable_unprepare(usbpdata->hclk_hsic);
-		clk_disable_unprepare(usbpdata->hsic_phy_480m);
-		clk_disable_unprepare(usbpdata->hsic_phy_12m);
+		clk_disable_unprepare(usbpdata->hclk_ehci);
+		clk_disable_unprepare(usbpdata->ehci_phy_480m);
+		clk_disable_unprepare(usbpdata->ehci_phy_12m);
 		usbpdata->clk_status = 0;
 	}
 }
 
-static void rk_hsic_soft_reset(void *pdata, enum rkusb_rst_flag rst_type)
+static void rk_ehci1_soft_reset(void *pdata, enum rkusb_rst_flag rst_type)
 {
 	struct rkehci_platform_data *usbpdata = pdata;
-	struct reset_control *rst_hsic_h, *rst_hsic_a, *rst_hsic_p;
+	struct reset_control *rst_ehci1_h, *rst_ehci1_a, *rst_ehci1_p;
 
-	rst_hsic_h = devm_reset_control_get(usbpdata->dev, "hsic_ahb");
-	rst_hsic_a = devm_reset_control_get(usbpdata->dev, "hsic_aux");
-	rst_hsic_p = devm_reset_control_get(usbpdata->dev, "hsic_phy");
+	rst_ehci1_h = devm_reset_control_get(usbpdata->dev, "ehci1_ahb");
+	rst_ehci1_a = devm_reset_control_get(usbpdata->dev, "ehci1_aux");
+	rst_ehci1_p = devm_reset_control_get(usbpdata->dev, "ehci1_phy");
 
-	reset_control_assert(rst_hsic_h);
-	reset_control_assert(rst_hsic_a);
-	reset_control_assert(rst_hsic_p);
+	reset_control_assert(rst_ehci1_h);
+	reset_control_assert(rst_ehci1_a);
+	reset_control_assert(rst_ehci1_p);
 	udelay(5);
-	reset_control_deassert(rst_hsic_h);
-	reset_control_deassert(rst_hsic_a);
-	reset_control_deassert(rst_hsic_p);
+	reset_control_deassert(rst_ehci1_h);
+	reset_control_deassert(rst_ehci1_a);
+	reset_control_deassert(rst_ehci1_p);
 	mdelay(2);
 
-	/* HSIC per-port reset */
+	/* EHCI1 per-port reset */
 	control_usb->grf_uoc3_base->CON0 = ((1 << 10) << 16) | (1 << 10);
 	udelay(2);
 	control_usb->grf_uoc3_base->CON0 = ((1 << 10) << 16) | (0 << 10);
 	udelay(2);
 }
 
-struct rkehci_platform_data rkhsic_pdata_rk3288 = {
-	.hclk_hsic = NULL,
-	.hsic_phy_12m = NULL,
-	.hsic_phy_480m = NULL,
+struct rkehci_platform_data rkehci1_pdata_rk3288 = {
+	.hclk_ehci = NULL,
+	.ehci_phy_12m = NULL,
+	.ehci_phy_480m = NULL,
 	.clk_status = -1,
-	.hw_init = rk_hsic_hw_init,
-	.clock_init = rk_hsic_clock_init,
-	.clock_enable = rk_hsic_clock_enable,
-	.soft_reset = rk_hsic_soft_reset,
+	.hw_init = rk_ehci1_hw_init,
+	.clock_init = rk_ehci1_clock_init,
+	.clock_enable = rk_ehci1_clock_enable,
+	.soft_reset = rk_ehci1_soft_reset,
 };
 #endif
 
@@ -662,7 +685,7 @@ static inline void do_wakeup(struct work_struct *work)
 
 static void usb_battery_charger_detect_work(struct work_struct *work)
 {
-	rk_usb_charger_status = usb_battery_charger_detect(0);
+	rk_battery_charger_detect_cb(usb_battery_charger_detect(1));
 }
 
 /********** handler for bvalid irq **********/
@@ -671,10 +694,8 @@ static irqreturn_t bvalid_irq_handler(int irq, void *dev_id)
 	/* clear irq */
 	control_usb->grf_uoc0_base->CON4 = (0x0008 | (0x0008 << 16));
 
-#ifdef CONFIG_RK_USB_UART
 	/* usb otg dp/dm switch to usb phy */
 	dwc_otg_uart_mode(NULL, PHY_USB_MODE);
-#endif
 
 	if (control_usb->usb_irq_wakeup) {
 		wake_lock_timeout(&control_usb->usb_wakelock,
@@ -682,8 +703,6 @@ static irqreturn_t bvalid_irq_handler(int irq, void *dev_id)
 		schedule_delayed_work(&control_usb->usb_det_wakeup_work,
 				      HZ / 10);
 	}
-
-	rk_usb_charger_status = USB_BC_TYPE_SDP;
 	schedule_delayed_work(&control_usb->usb_charger_det_work, HZ / 10);
 
 	return IRQ_HANDLED;
@@ -705,10 +724,8 @@ static irqreturn_t id_irq_handler(int irq, void *dev_id)
 
 	/* id fall */
 	if (uoc_con & (1 << 7)) {
-#ifdef CONFIG_RK_USB_UART
 		/* usb otg dp/dm switch to usb phy */
 		dwc_otg_uart_mode(NULL, PHY_USB_MODE);
-#endif
 		/* clear id fall irq pandding */
 		control_usb->grf_uoc0_base->CON4 = ((1 << 7) | (1 << 23));
 	}
@@ -755,7 +772,6 @@ static int otg_irq_detect_init(struct platform_device *pdev)
 {
 	int ret = 0;
 	int irq = 0;
-
 	if (control_usb->usb_irq_wakeup) {
 		wake_lock_init(&control_usb->usb_wakelock, WAKE_LOCK_SUSPEND,
 			       "usb_detect");
@@ -1096,11 +1112,9 @@ static int dwc_otg_control_usb_probe(struct platform_device *pdev)
 		goto err2;
 	}
 #ifdef CONFIG_USB20_OTG
-	if (usb20otg_get_status(USB_STATUS_BVABLID)) {
-		rk_usb_charger_status = USB_BC_TYPE_SDP;
+	if (usb20otg_get_status(USB_STATUS_BVABLID))
 		schedule_delayed_work(&control_usb->usb_charger_det_work,
 				      HZ / 10);
-	}
 #endif
 
 	ret = otg_irq_detect_init(pdev);
@@ -1163,3 +1177,4 @@ MODULE_ALIAS("platform: dwc_control_usb");
 MODULE_AUTHOR("RockChip Inc.");
 MODULE_DESCRIPTION("RockChip Control Module USB Driver");
 MODULE_LICENSE("GPL v2");
+#endif

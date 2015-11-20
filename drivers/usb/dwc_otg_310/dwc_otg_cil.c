@@ -1394,7 +1394,7 @@ void dwc_otg_core_init(dwc_otg_core_if_t *core_if)
 		DWC_DEBUGPL(DBG_CIL, "Internal DMA Mode\n");
 		/* Old value was DWC_GAHBCFG_INT_DMA_BURST_INCR - done for
 		   Host mode ISOC in issue fix - vahrama */
-		ahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR16;
+		ahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR8;
 		core_if->dma_enable = (core_if->core_params->dma_enable != 0);
 		core_if->dma_desc_enable =
 		    (core_if->core_params->dma_desc_enable != 0);
@@ -1714,7 +1714,7 @@ void dwc_otg_core_init_no_reset(dwc_otg_core_if_t *core_if)
 		DWC_DEBUGPL(DBG_CIL, "Internal DMA Mode\n");
 		/* Old value was DWC_GAHBCFG_INT_DMA_BURST_INCR - done for
 		   Host mode ISOC in issue fix - vahrama */
-		ahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR16;
+		ahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR8;
 		core_if->dma_enable = (core_if->core_params->dma_enable != 0);
 		core_if->dma_desc_enable =
 		    (core_if->core_params->dma_desc_enable != 0);
@@ -1973,8 +1973,8 @@ void dwc_otg_core_dev_init(dwc_otg_core_if_t *core_if)
 	DWC_MODIFY_REG32(core_if->pcgcctl, pcgcctl.d32, 0);
 	dwc_udelay(10);
 
-	gahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR16;
-	DWC_MODIFY_REG32(&global_regs->gahbcfg, 0, gahbcfg.b.hburstlen);
+	gahbcfg.b.hburstlen = DWC_GAHBCFG_INT_DMA_BURST_INCR8;
+	DWC_MODIFY_REG32(&global_regs->gahbcfg, 0, gahbcfg.d32);
 
 	/* Device configuration register */
 	init_devspd(core_if);
@@ -2262,9 +2262,9 @@ void dwc_otg_core_dev_init(dwc_otg_core_if_t *core_if)
 				    DWC_READ_REG32(&core_if->
 						   dev_if->out_ep_regs[i]->
 						   doepint);
-				if (j == 100000) {
+				if (j++ >= 10000) {
 					DWC_ERROR
-					    ("EPDIS was not set during 10s\n");
+					    ("EPDIS was not set during 1s\n");
 					break;
 				}
 			} while (!doepint.b.epdisabled);
@@ -2395,6 +2395,8 @@ void dwc_otg_disable_host_interrupts(dwc_otg_core_if_t *core_if)
 	intr_mask.b.nptxfempty = 1;
 
 	DWC_MODIFY_REG32(&global_regs->gintmsk, intr_mask.d32, 0);
+	/* Clear pending interrupts */
+	DWC_WRITE_REG32(&global_regs->gintsts, intr_mask.d32);
 }
 
 /**
@@ -5436,9 +5438,6 @@ void dwc_otg_dump_global_registers(dwc_otg_core_if_t *core_if)
 	addr = &core_if->core_global_regs->gdfifocfg;
 	DWC_PRINTF("GDFIFOCFG	 @0x%08lX : 0x%08X\n", (unsigned long)addr,
 		   DWC_READ_REG32(addr));
-	addr = &core_if->core_global_regs->adpctl;
-	DWC_PRINTF("ADPCTL	 @0x%08lX : 0x%08X\n", (unsigned long)addr,
-		   dwc_otg_adp_read_reg(core_if));
 	addr = &core_if->core_global_regs->hptxfsiz;
 	DWC_PRINTF("HPTXFSIZ	 @0x%08lX : 0x%08X\n", (unsigned long)addr,
 		   DWC_READ_REG32(addr));
@@ -7738,4 +7737,26 @@ int dwc_otg_check_haps_status(dwc_otg_core_if_t *core_if)
 		return retval;
 	}
 
+}
+
+void dwc_otg_set_force_mode(dwc_otg_core_if_t *core_if, int mode)
+{
+	gusbcfg_data_t usbcfg = {.d32 = 0 };
+
+	usbcfg.d32 = DWC_READ_REG32(&core_if->core_global_regs->gusbcfg);
+	switch (mode) {
+	case USB_MODE_FORCE_HOST:
+		usbcfg.b.force_host_mode = 1;
+		usbcfg.b.force_dev_mode = 0;
+		break;
+	case USB_MODE_FORCE_DEVICE:
+		usbcfg.b.force_host_mode = 0;
+		usbcfg.b.force_dev_mode = 1;
+		break;
+	case USB_MODE_NORMAL:
+		usbcfg.b.force_host_mode = 0;
+		usbcfg.b.force_dev_mode = 0;
+		break;
+	}
+	DWC_WRITE_REG32(&core_if->core_global_regs->gusbcfg, usbcfg.d32);
 }

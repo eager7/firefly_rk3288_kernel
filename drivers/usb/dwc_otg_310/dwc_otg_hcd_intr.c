@@ -308,7 +308,6 @@ int32_t dwc_otg_hcd_handle_perio_tx_fifo_empty_intr(dwc_otg_hcd_t *dwc_otg_hcd)
 	return 1;
 }
 
-extern struct usb_hcd *dwc_otg_hcd_to_hcd(dwc_otg_hcd_t *dwc_otg_hcd);
 /** There are multiple conditions that can cause a port interrupt. This function
  * determines which interrupt conditions have occurred and handles them
  * appropriately. */
@@ -317,7 +316,7 @@ int32_t dwc_otg_hcd_handle_port_intr(dwc_otg_hcd_t *dwc_otg_hcd)
 	int retval = 0;
 	hprt0_data_t hprt0;
 	hprt0_data_t hprt0_modify;
-	struct usb_hcd *hcd = dwc_otg_hcd_to_hcd(dwc_otg_hcd);
+	struct usb_hcd *hcd = dwc_otg_hcd_get_priv_data(dwc_otg_hcd);
 	struct usb_bus *bus = hcd_to_bus(hcd);
 
 	hprt0.d32 = DWC_READ_REG32(dwc_otg_hcd->core_if->host_if->hprt0);
@@ -838,26 +837,6 @@ static void release_channel(dwc_otg_hcd_t *hcd,
 	DWC_DEBUGPL(DBG_HCDV, "  %s: channel %d, halt_status %d\n",
 		    __func__, hc->hc_num, halt_status);
 
-	if (halt_status != DWC_OTG_HC_XFER_URB_DEQUEUE) {
-		if (((uint32_t) qtd & 0xf0000000) == 0) {
-			DWC_PRINTF("%s error: qtd %p, status %d 0!!!\n",
-				   __func__, qtd, halt_status);
-			goto cleanup;
-		}
-
-		if (((uint32_t) qtd & 0x80000000) == 0) {
-			DWC_PRINTF("%s error: qtd %p, status %d 1!!!\n",
-				   __func__, qtd, halt_status);
-			goto cleanup;
-		}
-
-		if (((uint32_t) qtd->urb & 0xf0000000) == 0) {
-			DWC_PRINTF("%s qtd %p urb %p, status %d\n", __func__,
-				   qtd, qtd->urb, halt_status);
-			goto cleanup;
-		}
-	}
-
 	switch (halt_status) {
 	case DWC_OTG_HC_XFER_URB_COMPLETE:
 		free_qtd = 1;
@@ -1130,17 +1109,15 @@ static int32_t handle_hc_xfercomp_intr(dwc_otg_hcd_t *hcd,
 	DWC_DEBUGPL(DBG_HCD, "--Host Channel %d Interrupt: "
 		    "Transfer Complete--\n", hc->hc_num);
 
-	if (((uint32_t) qtd & 0xf0000000) == 0) {
-		DWC_PRINTF("%s qtd %p\n", __func__, qtd);
-		release_channel(hcd, hc, qtd, hc->halt_status);
-		return 1;
+	if (!qtd) {
+		release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_URB_DEQUEUE);
+		goto handle_xfercomp_done;
 	}
 
 	urb = qtd->urb;
-	if (((uint32_t) urb & 0xf0000000) == 0) {
-		DWC_PRINTF("%s qtd %p, urb %p\n", __func__, qtd, urb);
-		release_channel(hcd, hc, qtd, hc->halt_status);
-		return 1;
+	if (!urb) {
+		release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_URB_DEQUEUE);
+		goto handle_xfercomp_done;
 	}
 
 	pipe_type = dwc_otg_hcd_get_pipe_type(&urb->pipe_info);
@@ -2124,6 +2101,7 @@ int32_t dwc_otg_hcd_handle_hc_n_intr(dwc_otg_hcd_t *dwc_otg_hcd, uint32_t num)
 
 	hc = dwc_otg_hcd->hc_ptr_array[num];
 	hc_regs = dwc_otg_hcd->core_if->host_if->hc_regs[num];
+
 	qtd = DWC_CIRCLEQ_FIRST(&hc->qh->qtd_list);
 
 	hcint.d32 = DWC_READ_REG32(&hc_regs->hcint);
@@ -2180,8 +2158,8 @@ int32_t dwc_otg_hcd_handle_hc_n_intr(dwc_otg_hcd_t *dwc_otg_hcd, uint32_t num)
 		    handle_hc_frmovrun_intr(dwc_otg_hcd, hc, hc_regs, qtd);
 	}
 	if (hcint.b.datatglerr) {
-		retval |=
-		    handle_hc_datatglerr_intr(dwc_otg_hcd, hc, hc_regs, qtd);
+		disable_hc_int(hc_regs, datatglerr);
+		clear_hc_int(hc_regs, chhltd);
 	}
 
 	return retval;

@@ -16,14 +16,21 @@
 
 #include "usbdev_rk.h"
 
-/****** GET and SET REGISTER FIELDS IN GRF UOC ******/
+char *bc_string[USB_BC_TYPE_MAX] = {"DISCONNECT",
+				    "Stander Downstream Port",
+				    "Dedicated Charging Port",
+				    "Charging Downstream Port",
+				    "UNKNOW"};
 
+/****** GET and SET REGISTER FIELDS IN GRF UOC ******/
 #define BC_GET(x) grf_uoc_get_field(&pBC_UOC_FIELDS[x])
 #define BC_SET(x, v) grf_uoc_set_field(&pBC_UOC_FIELDS[x], v)
 
 uoc_field_t *pBC_UOC_FIELDS;
 static void *pGRF_BASE;
-int rk_usb_charger_status = USB_BC_TYPE_DISCNT;
+static struct mutex bc_mutex;
+
+static enum bc_port_type usb_charger_status = USB_BC_TYPE_DISCNT;
 
 /****** GET REGISTER FIELD INFO FROM Device Tree ******/
 
@@ -99,15 +106,47 @@ static inline void uoc_init_rk(struct device_node *np)
 
 static inline void uoc_init_inno(struct device_node *np)
 {
-	;
+	pBC_UOC_FIELDS = (uoc_field_t *)
+			 kzalloc(INNO_BC_MAX * sizeof(uoc_field_t), GFP_ATOMIC);
+
+	uoc_init_field(np, "rk_usb,bvalid",
+			   &pBC_UOC_FIELDS[INNO_BC_BVALID]);
+	uoc_init_field(np, "rk_usb,iddig",
+			   &pBC_UOC_FIELDS[INNO_BC_IDDIG]);
+	uoc_init_field(np, "rk_usb,vdmsrcen",
+			   &pBC_UOC_FIELDS[INNO_BC_VDMSRCEN]);
+	uoc_init_field(np, "rk_usb,vdpsrcen",
+			   &pBC_UOC_FIELDS[INNO_BC_VDPSRCEN]);
+	uoc_init_field(np, "rk_usb,rdmpden",
+			   &pBC_UOC_FIELDS[INNO_BC_RDMPDEN]);
+	uoc_init_field(np, "rk_usb,idpsrcen",
+			   &pBC_UOC_FIELDS[INNO_BC_IDPSRCEN]);
+	uoc_init_field(np, "rk_usb,idmsinken",
+			   &pBC_UOC_FIELDS[INNO_BC_IDMSINKEN]);
+	uoc_init_field(np, "rk_usb,idpsinken",
+			   &pBC_UOC_FIELDS[INNO_BC_IDPSINKEN]);
+	uoc_init_field(np, "rk_usb,dpattach",
+			   &pBC_UOC_FIELDS[INNO_BC_DPATTACH]);
+	uoc_init_field(np, "rk_usb,cpdet",
+			   &pBC_UOC_FIELDS[INNO_BC_CPDET]);
+	uoc_init_field(np, "rk_usb,dcpattach",
+			   &pBC_UOC_FIELDS[INNO_BC_DCPATTACH]);
 }
 
 /****** BATTERY CHARGER DETECT FUNCTIONS ******/
+bool is_connected(void)
+{
+	if (!pGRF_BASE)
+		return false;
+	if (BC_GET(BC_BVALID) && BC_GET(BC_IDDIG))
+		return true;
+	return false;
+}
 
-int usb_battery_charger_detect_rk(bool wait)
+enum bc_port_type usb_battery_charger_detect_rk(bool wait)
 {
 
-	int port_type = USB_BC_TYPE_DISCNT;
+	enum bc_port_type port_type = USB_BC_TYPE_DISCNT;
 
 	if (BC_GET(RK_BC_BVALID) &&
 	    BC_GET(RK_BC_IDDIG)) {
@@ -141,17 +180,88 @@ int usb_battery_charger_detect_rk(bool wait)
 	return port_type;
 }
 
-int usb_battery_charger_detect_inno(bool wait)
+enum bc_port_type usb_battery_charger_detect_inno(bool wait)
 {
+	enum bc_port_type port_type = USB_BC_TYPE_DISCNT;
+	int dcd_state = DCD_POSITIVE;
+	int timeout = 0, i = 0;
 
-	return -1;
+	/* VBUS Valid detect */
+	if (BC_GET(INNO_BC_BVALID) &&
+		BC_GET(INNO_BC_IDDIG)) {
+		if (wait) {
+			/* Do DCD */
+			dcd_state = DCD_TIMEOUT;
+			BC_SET(INNO_BC_RDMPDEN, 1);
+			BC_SET(INNO_BC_IDPSRCEN, 1);
+			timeout = T_DCD_TIMEOUT;
+			while (timeout--) {
+				if (BC_GET(INNO_BC_DPATTACH))
+					i++;
+				if (i >= 3) {
+					/* It is a filter here to assure data
+					 * lines contacted for at least 3ms */
+					dcd_state = DCD_POSITIVE;
+					break;
+				}
+				mdelay(1);
+			}
+			BC_SET(INNO_BC_RDMPDEN, 0);
+			BC_SET(INNO_BC_IDPSRCEN, 0);
+		} else {
+			dcd_state = DCD_PASSED;
+		}
+		if (dcd_state == DCD_TIMEOUT) {
+			port_type = USB_BC_TYPE_UNKNOW;
+			goto out;
+		}
+
+		/* Turn on VDPSRC */
+		/* Primary Detection */
+		BC_SET(INNO_BC_VDPSRCEN, 1);
+		BC_SET(INNO_BC_IDMSINKEN, 1);
+		udelay(T_BC_CHGDET_VALID);
+
+		/* SDP and CDP/DCP distinguish */
+		if (BC_GET(INNO_BC_CPDET)) {
+			/* Turn off VDPSRC */
+			BC_SET(INNO_BC_VDPSRCEN, 0);
+			BC_SET(INNO_BC_IDMSINKEN, 0);
+
+			udelay(T_BC_CHGDET_VALID);
+
+			/* Turn on VDMSRC */
+			BC_SET(INNO_BC_VDMSRCEN, 1);
+			BC_SET(INNO_BC_IDPSINKEN, 1);
+			udelay(T_BC_CHGDET_VALID);
+			if (BC_GET(INNO_BC_DCPATTACH))
+				port_type = USB_BC_TYPE_DCP;
+			else
+				port_type = USB_BC_TYPE_CDP;
+		} else {
+			port_type = USB_BC_TYPE_SDP;
+		}
+
+		BC_SET(INNO_BC_VDPSRCEN, 0);
+		BC_SET(INNO_BC_IDMSINKEN, 0);
+		BC_SET(INNO_BC_VDMSRCEN, 0);
+		BC_SET(INNO_BC_IDPSINKEN, 0);
+
+	}
+out:
+	/*
+	printk("%s, Charger type %s, %s DCD, dcd_state = %d\n", __func__,
+	       bc_string[port_type], wait ? "wait" : "pass", dcd_state);
+	*/
+	return port_type;
+
 }
 
 /* When do BC detect PCD pull-up register should be disabled  */
 /* wait wait for dcd timeout 900ms */
-int usb_battery_charger_detect_synop(bool wait)
+enum bc_port_type usb_battery_charger_detect_synop(bool wait)
 {
-	int port_type = USB_BC_TYPE_DISCNT;
+	enum bc_port_type port_type = USB_BC_TYPE_DISCNT;
 	int dcd_state = DCD_POSITIVE;
 	int timeout = 0, i = 0;
 
@@ -218,105 +328,104 @@ int usb_battery_charger_detect_synop(bool wait)
 
 	}
 out:
-	printk("%s , battery_charger_detect %d, %s DCD, dcd_state = %d\n",
-	       __func__, port_type, wait ? "wait" : "pass", dcd_state);
+	/*
+	printk("%s, Charger type %s, %s DCD, dcd_state = %d\n", __func__,
+	       bc_string[port_type], wait ? "wait" : "pass", dcd_state);
+	*/
 	return port_type;
 }
 
-int usb_battery_charger_detect(bool wait)
+enum bc_port_type usb_battery_charger_detect(bool wait)
 {
 	static struct device_node *np;
+	enum bc_port_type ret = USB_BC_TYPE_DISCNT;
+
+	might_sleep();
+
 	if (!np)
 		np = of_find_node_by_name(NULL, "usb_bc");
 	if (!np)
-		goto fail;
-	if (!pGRF_BASE)
-		pGRF_BASE = get_grf_base(np);
+		return -1;
 
+	if (!pGRF_BASE) {
+		pGRF_BASE = get_grf_base(np);
+		mutex_init(&bc_mutex);
+	}
+
+	mutex_lock(&bc_mutex);
 	if (of_device_is_compatible(np, "rockchip,ctrl")) {
 		if (!pBC_UOC_FIELDS)
 			uoc_init_rk(np);
-		return usb_battery_charger_detect_rk(wait);
+		ret = usb_battery_charger_detect_rk(wait);
 	}
 
 	else if (of_device_is_compatible(np, "synopsys,phy")) {
 		if (!pBC_UOC_FIELDS)
 			uoc_init_synop(np);
-		return usb_battery_charger_detect_synop(wait);
+		ret = usb_battery_charger_detect_synop(wait);
 	}
 
 	else if (of_device_is_compatible(np, "inno,phy")) {
 		if (!pBC_UOC_FIELDS)
 			uoc_init_inno(np);
-		return usb_battery_charger_detect_inno(wait);
+		ret = usb_battery_charger_detect_inno(wait);
 	}
-fail:
-	return -1;
+	if (ret == USB_BC_TYPE_UNKNOW)
+		ret = USB_BC_TYPE_DCP;
+	mutex_unlock(&bc_mutex);
+	rk_battery_charger_detect_cb(ret);
+	return ret;
 }
-
-EXPORT_SYMBOL(usb_battery_charger_detect);
 
 int dwc_otg_check_dpdm(bool wait)
 {
-	static struct device_node *np;
-	if (!np)
-		np = of_find_node_by_name(NULL, "usb_bc");
-	if (!np)
-		return -1;
-	if (!pGRF_BASE)
-		pGRF_BASE = get_grf_base(np);
-
-	if (of_device_is_compatible(np, "rockchip,ctrl")) {
-		if (!pBC_UOC_FIELDS)
-			uoc_init_rk(np);
-		if (!BC_GET(RK_BC_BVALID) ||
-		    !BC_GET(RK_BC_IDDIG))
-			rk_usb_charger_status = USB_BC_TYPE_DISCNT;
-
-	} else if (of_device_is_compatible(np, "synopsys,phy")) {
-		if (!pBC_UOC_FIELDS)
-			uoc_init_synop(np);
-		if (!BC_GET(SYNOP_BC_BVALID) ||
-		    !BC_GET(SYNOP_BC_IDDIG))
-			rk_usb_charger_status = USB_BC_TYPE_DISCNT;
-
-	} else if (of_device_is_compatible(np, "inno,phy")) {
-		if (!pBC_UOC_FIELDS)
-			uoc_init_inno(np);
-	}
-
-	return rk_usb_charger_status;
+	return (is_connected() ? usb_charger_status : USB_BC_TYPE_DISCNT);
 }
 EXPORT_SYMBOL(dwc_otg_check_dpdm);
 
-/* CALL BACK FUNCTION for USB CHARGER TYPE CHANGED */
+/* Call back function for USB charger type changed */
+static ATOMIC_NOTIFIER_HEAD(rk_bc_notifier);
 
-void usb20otg_battery_charger_detect_cb(int charger_type_new)
+int rk_bc_detect_notifier_register(struct notifier_block *nb,
+					   int *type)
 {
-	static int charger_type = USB_BC_TYPE_DISCNT;
-	if (charger_type != charger_type_new) {
-		switch (charger_type_new) {
-		case USB_BC_TYPE_DISCNT:
-			break;
+	*type = (int)usb_battery_charger_detect(0);
+	return atomic_notifier_chain_register(&rk_bc_notifier, nb);
+}
+EXPORT_SYMBOL(rk_bc_detect_notifier_register);
 
-		case USB_BC_TYPE_SDP:
-			break;
+int rk_bc_detect_notifier_unregister(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_unregister(&rk_bc_notifier, nb);
+}
+EXPORT_SYMBOL(rk_bc_detect_notifier_unregister);
 
-		case USB_BC_TYPE_DCP:
-			break;
+void rk_bc_detect_notifier_callback(int bc_mode)
+{
+	atomic_notifier_call_chain(&rk_bc_notifier,bc_mode, NULL);
+}
 
-		case USB_BC_TYPE_CDP:
-			break;
+void rk_battery_charger_detect_cb(int new_type)
+{
+	might_sleep();
 
-		case USB_BC_TYPE_UNKNOW:
-			break;
-
-		default:
-			break;
-		}
-
-		/* printk("%s , battery_charger_detect %d\n",
-		 *	  __func__, charger_type_new);*/
+	if (usb_charger_status != new_type) {
+		printk("%s , battery_charger_detect %d\n", __func__, new_type);
+		atomic_notifier_call_chain(&rk_bc_notifier, new_type, NULL);
 	}
-	charger_type = charger_type_new;
+
+	if (!pGRF_BASE) {
+		static struct device_node *np;
+
+		if (!np)
+			np = of_find_node_by_name(NULL, "usb_bc");
+		if (!np)
+			return -1;
+		
+		pGRF_BASE = get_grf_base(np);
+		mutex_init(&bc_mutex);
+	}
+	mutex_lock(&bc_mutex);
+	usb_charger_status = new_type;
+	mutex_unlock(&bc_mutex);
 }
