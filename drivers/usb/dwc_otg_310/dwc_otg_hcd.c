@@ -303,6 +303,7 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *p)
 	 */
 	dwc_otg_hcd->flags.b.port_connect_status_change = 1;
 	dwc_otg_hcd->flags.b.port_connect_status = 0;
+	dwc_otg_hcd->flags.b.port_suspend_connect_status = 0;
 
 	/*
 	 * Shutdown any transfers in process by clearing the Tx FIFO Empty
