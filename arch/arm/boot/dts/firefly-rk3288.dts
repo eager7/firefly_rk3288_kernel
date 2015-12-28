@@ -5,7 +5,7 @@
 
 / {
 	fiq-debugger {
-		status = "disabled";
+		status = "okay";
 	};
 
 	hsic-usb-hub{
@@ -405,7 +405,7 @@
 };
 
 &uart_dbg {
-	status = "okay";
+	status = "disabled";
 };
 
 

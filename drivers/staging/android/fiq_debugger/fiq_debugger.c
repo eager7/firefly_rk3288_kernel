@@ -759,7 +759,7 @@ static void fiq_debugger_handle_wakeup(struct fiq_debugger_state *state)
 
 static irqreturn_t fiq_debugger_wakeup_irq_handler(int irq, void *dev)
 {
-	struct fiq_debugger_state *state = dev;
+    struct fiq_debugger_state *state = dev;
 
 	if (!state->no_sleep)
 		fiq_debugger_puts(state, "WAKEUP\n");
@@ -777,6 +777,7 @@ void fiq_debugger_handle_console_irq_context(struct fiq_debugger_state *state)
 		int count = fiq_debugger_ringbuf_level(state->tty_rbuf);
 		for (i = 0; i < count; i++) {
 			int c = fiq_debugger_ringbuf_peek(state->tty_rbuf, 0);
+            udelay(85);
 			tty_insert_flip_char(&state->tty_port, c, TTY_NORMAL);
 			if (!fiq_debugger_ringbuf_consume(state->tty_rbuf, 1))
 				pr_warn("fiq tty failed to consume byte\n");
@@ -785,7 +786,6 @@ void fiq_debugger_handle_console_irq_context(struct fiq_debugger_state *state)
 	}
 #endif
 }
-
 static void fiq_debugger_handle_irq_context(struct fiq_debugger_state *state)
 {
 	if (!state->no_sleep) {
@@ -946,10 +946,10 @@ static bool fiq_debugger_handle_uart_interrupt(struct fiq_debugger_state *state,
 		if((recv_count0 - recv_count1) > 128) {
 			ms = jiffies_to_msecs(jiffies - jif);
 			if(ms < 1000) {
-				if(cpu_is_rk3288()){
-					writel_relaxed((0x00c0 << 16),
-					RK_GRF_VIRT + RK3288_GRF_UOC0_CON3);
-				}
+				//if(cpu_is_rk3288()){
+				//	writel_relaxed((0x00c0 << 16),
+				//	RK_GRF_VIRT + RK3288_GRF_UOC0_CON3);
+				//}
 			}
 			jif = jiffies;
 			recv_count1 = recv_count0;
@@ -1072,11 +1072,11 @@ static void fiq_debugger_fiq(struct fiq_glue_handler *h,
 			writel_relaxed((0x0300 << 16), RK_GRF_VIRT + RK3188_GRF_UOC0_CON0);
 		}
 	} else if (cpu_is_rk3288()) {
-		if (!(readl_relaxed(RK_GRF_VIRT + RK3288_GRF_SOC_STATUS2) & (1 << 17)) ||
-		     (readl_relaxed(RK_GRF_VIRT + RK3288_GRF_SOC_STATUS2) & (1 << 14))) {
+		//if (!(readl_relaxed(RK_GRF_VIRT + RK3288_GRF_SOC_STATUS2) & (1 << 17)) ||
+		//     (readl_relaxed(RK_GRF_VIRT + RK3288_GRF_SOC_STATUS2) & (1 << 14))) {
 			/* id low or bvalid high, enter usb phy */
-			writel_relaxed((0x00c0 << 16), RK_GRF_VIRT + RK3288_GRF_UOC0_CON3);
-		}
+		//	writel_relaxed((0x00c0 << 16), RK_GRF_VIRT + RK3288_GRF_UOC0_CON3);
+		//}
 	}
 #endif
 	need_irq = fiq_debugger_handle_uart_interrupt(state, this_cpu, regs,
@@ -1115,7 +1115,7 @@ static irqreturn_t fiq_debugger_uart_irq(int irq, void *dev)
  */
 static irqreturn_t fiq_debugger_signal_irq(int irq, void *dev)
 {
-	struct fiq_debugger_state *state = dev;
+    struct fiq_debugger_state *state = dev;
 
 	if (state->pdata->force_irq_ack)
 		state->pdata->force_irq_ack(state->pdev, state->signal_irq);
@@ -1331,7 +1331,7 @@ static int fiq_debugger_tty_init_one(struct fiq_debugger_state *state)
 
 	states[state->pdev->id] = state;
 
-	state->tty_rbuf = fiq_debugger_ringbuf_alloc(1024);
+	state->tty_rbuf = fiq_debugger_ringbuf_alloc(256);
 	if (!state->tty_rbuf) {
 		pr_err("Failed to allocate fiq debugger ringbuf\n");
 		ret = -ENOMEM;
