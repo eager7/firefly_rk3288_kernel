@@ -327,6 +327,10 @@ int vga_switch_default_screen(void)
 EXPORT_SYMBOL(vga_switch_default_screen);
 
 
+static ssize_t vga_print_name(struct switch_dev *sdev, char *buf)
+{
+	return sprintf(buf, "vga\n");
+}
 
 static int firefly_fb_event_notify(struct notifier_block *self, unsigned long action, void *data)
 {
@@ -641,6 +645,11 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
     memset(&vga_monspecs, 0, sizeof(struct sda7123_monspecs));
     
     ddev->vga = &vga_monspecs;
+	#ifdef CONFIG_SWITCH
+	ddev->switchdev.name="vga";
+	ddev->switchdev.print_name = vga_print_name;
+	switch_dev_register(&(ddev->switchdev));
+	#endif
     
     mutex_init(&ddev->vga->lock);
     
@@ -657,10 +666,6 @@ static int  vga_edid_probe(struct i2c_client *client, const struct i2c_device_id
 	
 	fb_register_client(&firefly_fb_notifier);
 	
-	#ifdef CONFIG_SWITCH
-	ddev->switchdev.name="vga";
-	switch_dev_register(&(ddev->switchdev));
-	#endif
 	
 	vga_submit_work(ddev->vga, VGA_TIMER_DELAY, 8000, NULL);
 	
