@@ -38,6 +38,8 @@
 #endif
 
 #include "rk32_dp.h"
+#include <linux/gpio.h>
+#include <linux/of_gpio.h>
 
 /*#define EDP_BIST_MODE*/
 /*#define SW_LT*/
@@ -1170,6 +1172,29 @@ static int rk32_edp_enable(void)
 	int ret = 0;
 	struct rk32_edp *edp = rk32_edp;
 
+
+#if 0
+    if (gpio_is_valid(edp->pwn_gpio)) {
+        gpio_direction_output(edp->pwn_gpio,1);
+        mdelay(5);
+    }
+
+    if (gpio_is_valid(edp->rst_gpio)) {
+        gpio_direction_output(edp->rst_gpio,1);
+        mdelay(5);
+        gpio_direction_output(edp->rst_gpio,0);
+        mdelay(5);
+        gpio_direction_output(edp->rst_gpio,1);
+        mdelay(30);
+    }
+
+    if (gpio_is_valid(edp->hpd_gpio)) {
+        gpio_direction_output(edp->hpd_gpio,1);
+        mdelay(5);
+    }
+#endif
+
+
 	if (!edp->edp_en) {
 		rk32_edp_clk_enable(edp);
 		rk32_edp_pre_init(edp);
@@ -1711,6 +1736,7 @@ static int rk32_edp_probe(struct platform_device *pdev)
 	struct rk32_edp *edp;
 	struct resource *res;
 	struct device_node *np = pdev->dev.of_node;
+	enum of_gpio_flags hpd_flags;
 	int ret;
 
 	if (!np) {
@@ -1791,6 +1817,37 @@ static int rk32_edp_probe(struct platform_device *pdev)
 	edp->rst_apb = devm_reset_control_get(&pdev->dev, "edp_apb");
 	if (IS_ERR(edp->rst_apb))
 		dev_err(&pdev->dev, "failed to get reset\n");
+
+	edp->hpd_gpio = of_get_named_gpio_flags(np, "hpd-gpio",0,&hpd_flags);
+    if (gpio_is_valid(edp->hpd_gpio)) {
+        ret = devm_gpio_request(&pdev->dev,edp->hpd_gpio,"edp_hpd");
+        if (ret < 0) {
+            dev_err(&pdev->dev, "request hpd pin err\n");
+            return ret;
+        }
+        gpio_direction_output(edp->hpd_gpio,0);
+    }
+
+	edp->pwn_gpio = of_get_named_gpio_flags(np, "poweren-gpio",0,&hpd_flags);
+    if (gpio_is_valid(edp->pwn_gpio)) {
+        ret = devm_gpio_request(&pdev->dev,edp->pwn_gpio,"edp_pwn");
+        if (ret < 0) {
+            dev_err(&pdev->dev, "request pwn pin err\n");
+            return ret;
+        }
+        gpio_direction_output(edp->pwn_gpio,0);
+    }
+
+	edp->rst_gpio = of_get_named_gpio_flags(np, "rst-gpio",0,&hpd_flags);
+    if (gpio_is_valid(edp->rst_gpio)) {
+        ret = devm_gpio_request(&pdev->dev,edp->rst_gpio,"edp_rst");
+        if (ret < 0) {
+            dev_err(&pdev->dev, "request rst err\n");
+            return ret;
+        }
+        gpio_direction_output(edp->rst_gpio,0);
+    }
+
 	rk32_edp_clk_enable(edp);
 	if (!support_uboot_display())
 		rk32_edp_pre_init(edp);

@@ -563,6 +563,9 @@ struct rk32_edp {
 	struct video_info	video_info;
 	struct rk_screen	screen;
 	struct fb_monspecs      specs;
+    int hpd_gpio;
+    int pwn_gpio;
+    int rst_gpio;
 	bool clk_on;
 	bool edp_en;
 	struct dentry *debugfs_dir;

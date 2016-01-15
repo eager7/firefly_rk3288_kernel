@@ -737,6 +737,11 @@
 		compatible = "rockchip,rk32-edp";
 		reg = <0xff970000 0x4000>;
 		interrupts = <GIC_SPI 98 IRQ_TYPE_LEVEL_HIGH>;
+        /*
+        hpd-gpio = <&gpio8 GPIO_A7 GPIO_ACTIVE_HIGH>;
+        poweren-gpio = <&gpio7 GPIO_A3 GPIO_ACTIVE_HIGH>;
+        rst-gpio = <&gpio5 GPIO_C1 GPIO_ACTIVE_HIGH>;
+        */
 		clocks = <&clk_edp>, <&clk_edp_24m>, <&clk_gates16 8>;
 		clock-names = "clk_edp", "clk_edp_24m", "pclk_edp";
 	};

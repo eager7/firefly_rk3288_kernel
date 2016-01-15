@@ -31,10 +31,10 @@
 #include "tp_suspend.h"
 
 #include "rockchip_gslX680_firefly.h"
-    
+#include "GSL3680B.h"
 
 //#define GSL_DEBUG
-#define GSL_MONITOR
+//#define GSL_MONITOR
 #define REPORT_DATA_ANDROID_4_0
 //#define HAVE_TOUCH_KEY
 #define SLEEP_CLEAR_POINT
@@ -154,6 +154,8 @@ struct gsl_ts {
 	int irq_pin;
 	int rst_pin;
 	int rst_val;
+    int max_x;
+    int max_y;
 	struct  tp_device  tp;
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 	struct early_suspend early_suspend;
@@ -341,16 +343,16 @@ static void gsl_load_fw(struct i2c_client *client)
 	{
 	
 	printk("--------------3680B-----------------------\n");
-		ptr_fw = GSL3680B_FW;
-		source_len = ARRAY_SIZE(GSL3680B_FW);
+		ptr_fw = GSLX680_FW;
+		source_len = ARRAY_SIZE(GSLX680_FW);
 	}
 	else
 #endif
 	{
 	
 	printk("--------------3680A-----------------------\n");
-		ptr_fw = GSL3680A_FW;
-		source_len = ARRAY_SIZE(GSL3680A_FW);
+		//ptr_fw = GSL3680A_FW;
+		//source_len = ARRAY_SIZE(GSL3680A_FW);
 	}
 
 	for (source_line = 0; source_line < source_len; source_line++) 
@@ -422,13 +424,13 @@ static void startup_chip(struct i2c_client *client)
 	if(is_noid_version)
 	 {
 	 printk("----------3680B---------\n");
-	     gsl_DataInit(gsl_config_data_id_3680B);
+	     gsl_DataInit(gsl_config_data_id);
 	 }
 	else
 	 {
 	 
 	 printk("----------3680A---------\n");
-		 gsl_DataInit(gsl_config_data_id_3680A);
+		 //gsl_DataInit(gsl_config_data_id_3680A);
 	 }
 #endif
 	gsl_ts_write(client, 0xe0, &tmp, 1);
@@ -622,9 +624,9 @@ static int gsl_config_write_proc(struct file *file, const char *buffer, unsigned
 	{
 		tmp1=(buf[7]<<24)|(buf[6]<<16)|(buf[5]<<8)|buf[4];
 		tmp=(buf[3]<<24)|(buf[2]<<16)|(buf[1]<<8)|buf[0];
-		if(tmp1>=0 && tmp1<ARRAY_SIZE(gsl_config_data_id_3680B))
+		if(tmp1>=0 && tmp1<ARRAY_SIZE(gsl_config_data_id))
 		{
-			gsl_config_data_id_3680B[tmp1] = tmp;
+	         gsl_config_data_id[tmp1] = tmp;
 		}
 	}
 #endif
@@ -763,18 +765,22 @@ static void report_key(struct gsl_ts *ts, u16 x, u16 y)
 static void report_data(struct gsl_ts *ts, u16 x, u16 y, u8 pressure, u8 id)
 {
 	swap(x, y);
+	x = ts->max_x - x;
+	y = ts->max_y - y;
 
-	print_info("#####id=%d,x=%d,y=%d######\n",id,x,y);
+	//printk("#####id=%d,x=%d,y=%d######\n",id,x,y);
 
-	if(x > SCREEN_MAX_X || y > SCREEN_MAX_Y)
+#if 0
+	if(x > ts->max_x || y > ts->max_y)
 	{
 	#ifdef HAVE_TOUCH_KEY
 		report_key(ts,x,y);
 	#endif
 		return;
 	}
+#endif
 #ifdef CONFIG_TCHIP_MACH_BACK_MUSIC
-	y = SCREEN_MAX_Y - y;
+//	y = ts->max_y - y;
 #endif
 	
 #ifdef REPORT_DATA_ANDROID_4_0
@@ -842,7 +848,7 @@ static void gslX680_ts_worker(struct work_struct *work)
 				ts->touch_data[ts->dd->x_index + 4 * i]);
 		cinfo.y[i] = join_bytes(ts->touch_data[ts->dd->y_index + 4 * i + 1],
 				ts->touch_data[ts->dd->y_index + 4 * i ]);
-		print_info("tp-gsl  x = %d y = %d \n",cinfo.x[i],cinfo.y[i]);
+		//printk("tp-gsl  x = %d y = %d \n",cinfo.x[i],cinfo.y[i]);
 	}
 	cinfo.finger_num=(ts->touch_data[3]<<24)|(ts->touch_data[2]<<16)
 		|(ts->touch_data[1]<<8)|(ts->touch_data[0]);
@@ -1116,8 +1122,8 @@ static int gslX680_ts_init(struct i2c_client *client, struct gsl_ts *ts)
 	set_bit(ABS_MT_TOUCH_MAJOR, input_device->absbit);
 	set_bit(ABS_MT_WIDTH_MAJOR, input_device->absbit);
 
-	input_set_abs_params(input_device,ABS_MT_POSITION_X, 0, SCREEN_MAX_X, 0, 0);
-	input_set_abs_params(input_device,ABS_MT_POSITION_Y, 0, SCREEN_MAX_Y, 0, 0);
+	input_set_abs_params(input_device,ABS_MT_POSITION_X, 0, ts->max_x, 0, 0);
+	input_set_abs_params(input_device,ABS_MT_POSITION_Y, 0, ts->max_y, 0, 0);
 	input_set_abs_params(input_device,ABS_MT_TOUCH_MAJOR, 0, PRESS_MAX, 0, 0);
 	input_set_abs_params(input_device,ABS_MT_WIDTH_MAJOR, 0, 200, 0, 0);
 
@@ -1252,7 +1258,9 @@ static int gsl_ts_probe(struct i2c_client *client,
 	unsigned long irq_flags;
 
 	printk("GSLX680 Enter %s\n", __func__);
+	printk("--------------------------------%s\n", __func__);
 
+#if 0
 	//gslX680_init(); 
 	while(timer > 0)
 	{
@@ -1276,6 +1284,7 @@ static int gsl_ts_probe(struct i2c_client *client,
 		dev_err(&client->dev, "I2C functionality not supported\n");
 		return -ENODEV;
 	}
+#endif
  
 	ts = devm_kzalloc(&client->dev,sizeof(*ts), GFP_KERNEL);
 	if (!ts)
@@ -1293,6 +1302,19 @@ static int gsl_ts_probe(struct i2c_client *client,
 	printk("%s-%d\n", __FUNCTION__, __LINE__);
 	ts->irq_pin = of_get_named_gpio_flags(np, "touch-gpio", 0, (enum of_gpio_flags *)&irq_flags);
 	ts->rst_pin = of_get_named_gpio_flags(np, "reset-gpio", 0, &rst_flags);
+    ret = of_property_read_u32(np, "max-x", &ts->max_x);
+    if ((ret != 0) || (ts->max_x <= 0))
+        ts->max_x = DEFAULT_SCREEN_MAX_X;
+    ret = of_property_read_u32(np, "max-y", &ts->max_y);
+    if ((ret != 0) || (ts->max_y <= 0))
+        ts->max_y = DEFAULT_SCREEN_MAX_Y;
+
+    //gsl_config_data_id_3680A[15] = 2048 ;
+    //gsl_config_data_id_3680A[16] = 1536;
+
+    //gsl_config_data_id_3680B[15] = 2048;
+    //gsl_config_data_id_3680B[16] = 1536;
+
 	if (gpio_is_valid(ts->rst_pin)) {
 		ts->rst_val = (rst_flags & OF_GPIO_ACTIVE_LOW) ? 0 : 1;
 		ret = devm_gpio_request_one(&client->dev, ts->rst_pin, (rst_flags & OF_GPIO_ACTIVE_LOW) ? GPIOF_OUT_INIT_HIGH : GPIOF_OUT_INIT_LOW, "goodix reset pin");
@@ -1302,7 +1324,7 @@ static int gsl_ts_probe(struct i2c_client *client,
 		}
 		gpio_direction_output(ts->rst_pin, 0);
 		gpio_set_value(ts->rst_pin,GPIO_HIGH);
-		msleep(20);
+		mdelay(20);
 	} else {
 		dev_info(&client->dev, "reset pin invalid\n");
 	}
